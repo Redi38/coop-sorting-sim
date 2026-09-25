@@ -1,0 +1,59 @@
+[gd_scene format=3]
+
+[ext_resource type="Material" path="res://assets/materials/brass.tres" id="1"]
+
+[sub_resource type="StandardMaterial3D" id="orb"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.18
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 0.9
+rim_enabled = true
+
+[sub_resource type="CylinderMesh" id="base"]
+top_radius = 0.06
+bottom_radius = 0.085
+height = 0.05
+radial_segments = 12
+rings = 1
+
+[sub_resource type="CylinderMesh" id="stem"]
+top_radius = 0.03
+bottom_radius = 0.04
+height = 0.035
+radial_segments = 10
+rings = 1
+
+[sub_resource type="SphereMesh" id="sphere"]
+radius = 0.085
+height = 0.17
+radial_segments = 16
+rings = 8
+
+[sub_resource type="TorusMesh" id="ring"]
+inner_radius = 0.1
+outer_radius = 0.112
+rings = 20
+ring_segments = 6
+
+[node name="Artifact" type="Node3D"]
+
+[node name="Base" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.025, 0)
+mesh = SubResource("base")
+surface_material_override/0 = ExtResource("1")
+
+[node name="Stem" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.067, 0)
+mesh = SubResource("stem")
+surface_material_override/0 = ExtResource("1")
+
+[node name="TintOrb" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.165, 0)
+mesh = SubResource("sphere")
+surface_material_override/0 = SubResource("orb")
+
+[node name="Ring" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.866, -0.5, 0, 0.5, 0.866, 0, 0.165, 0)
+mesh = SubResource("ring")
+surface_material_override/0 = ExtResource("1")

@@ -1,0 +1,67 @@
+[gd_scene format=3]
+
+[sub_resource type="StandardMaterial3D" id="glass"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.12
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 0.35
+rim_enabled = true
+rim = 0.6
+
+[sub_resource type="StandardMaterial3D" id="clear_glass"]
+albedo_color = Color(0.85, 0.92, 0.9, 1)
+roughness = 0.1
+metallic_specular = 0.9
+
+[sub_resource type="StandardMaterial3D" id="cork"]
+albedo_color = Color(0.55, 0.38, 0.22, 1)
+roughness = 1.0
+
+[sub_resource type="SphereMesh" id="bulb"]
+radius = 0.105
+height = 0.2
+radial_segments = 16
+rings = 8
+
+[sub_resource type="CylinderMesh" id="neck"]
+top_radius = 0.032
+bottom_radius = 0.045
+height = 0.09
+radial_segments = 12
+rings = 1
+
+[sub_resource type="CylinderMesh" id="stopper"]
+top_radius = 0.042
+bottom_radius = 0.036
+height = 0.045
+radial_segments = 10
+rings = 1
+
+[sub_resource type="TorusMesh" id="lip"]
+inner_radius = 0.028
+outer_radius = 0.042
+rings = 12
+ring_segments = 6
+
+[node name="Potion" type="Node3D"]
+
+[node name="TintBulb" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.1, 0)
+mesh = SubResource("bulb")
+surface_material_override/0 = SubResource("glass")
+
+[node name="Neck" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.225, 0)
+mesh = SubResource("neck")
+surface_material_override/0 = SubResource("clear_glass")
+
+[node name="Lip" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.268, 0)
+mesh = SubResource("lip")
+surface_material_override/0 = SubResource("clear_glass")
+
+[node name="Stopper" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.29, 0)
+mesh = SubResource("stopper")
+surface_material_override/0 = SubResource("cork")

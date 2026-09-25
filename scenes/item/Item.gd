@@ -19,30 +19,65 @@ var placed: bool = false
 var current_slot: Node = null               # the ShelfSlot this item is sitting in, if placed
 var _held_player_node: CoopPlayer = null
 
-@onready var mesh: MeshInstance3D = $MeshInstance3D
+@onready var visual: Node3D = $Visual
 @onready var collision: CollisionShape3D = $CollisionShape3D
 @onready var label: Label3D = $Label3D
+
+
+@onready var synchronizer: MultiplayerSynchronizer = $MultiplayerSynchronizer
 
 
 func _ready() -> void:
 	add_to_group("item")
 	_refresh_clue_display()
 	set_multiplayer_authority(1)  # host always owns item logic
+	if multiplayer.is_server():
+		# Don't send this item to a peer until its World has loaded —
+		# otherwise the spawn arrives before the Items node exists and is
+		# lost (NetworkManager flips visibility on _client_world_ready).
+		synchronizer.add_visibility_filter(NetworkManager.is_peer_ready)
+	else:
+		# Clients never simulate item physics: the host is the only one
+		# that does, and clients just show the synced transform. Otherwise
+		# each client's local simulation drifts from the host's, and with
+		# on-change sync, nothing corrects it once the host's copy rests.
+		freeze = true
 
 
 func _refresh_clue_display() -> void:
-	# The color clue: matches the ShelfSlot indicator for the same category,
-	# so a player can sort by color alone before reading anything. The text
-	# clue (name + short description) is the fallback / tie-breaker for
-	# categories that end up sharing a similar color at a glance.
+	# The item's look comes from its category's model scene. Any mesh in it
+	# named "Tint..." takes the category color, so the model file itself
+	# stays neutral and reusable. (Per DESIGN.md, color stops being *the*
+	# clue in step 2 — shape, name and description will carry it.)
 	var cat := ItemCatalog.get_category(category)
-	if mesh and cat:
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = cat.color
-		mesh.set_surface_override_material(0, mat)
+	if cat and visual and visual.get_child_count() == 0:
+		var model: Node3D = load(cat.model_path).instantiate()
+		visual.add_child(model)
+		for node in model.find_children("Tint*", "MeshInstance3D"):
+			var mi := node as MeshInstance3D
+			var mat := (mi.get_active_material(0) as StandardMaterial3D).duplicate() as StandardMaterial3D
+			mat.albedo_color = cat.color
+			if mat.emission_enabled:
+				mat.emission = cat.color
+			mi.set_surface_override_material(0, mat)
+		# Each item gets its own shape (the scene's BoxShape3D is shared by
+		# every instance), sized to the model and resting on its base.
+		var shape := BoxShape3D.new()
+		shape.size = cat.size
+		collision.shape = shape
+		collision.position = Vector3(0, cat.size.y / 2.0, 0)
+		if label:
+			label.position = Vector3(0, cat.size.y + 0.14, 0)
 	if label:
 		var name_line := display_name if display_name != "" else item_id
 		label.text = name_line + ("\n" + description if description != "" else "")
+
+
+## Labels only show for the item the local player is looking at — 180
+## floating labels at once is unreadable. Called by Player.gd each frame.
+func set_label_visible(on: bool) -> void:
+	if label:
+		label.visible = on
 
 
 # category/display_name/description arrive on clients via the
@@ -72,11 +107,19 @@ func _physics_process(_delta: float) -> void:
 # ---------------------------------------------------------------------------
 
 @rpc("any_peer", "reliable", "call_local")
-func request_pickup(requesting_peer: int) -> void:
+func request_pickup() -> void:
 	if not multiplayer.is_server():
 		return
+	# Trust the transport, not a parameter: the sender id can't be spoofed,
+	# so one client can't make another player "pick up" items.
+	var requesting_peer := multiplayer.get_remote_sender_id()
 	if held_by_peer != 0:
 		return  # someone's already holding it
+	# Host-side carry limit. The client checks this too, but only against
+	# pickups the host has already confirmed — spamming E before the
+	# replies land would otherwise let a player exceed CARRY_CAPACITY.
+	if _count_held_by(requesting_peer) >= CoopPlayer.CARRY_CAPACITY:
+		return
 	if placed:
 		# Sitting in a slot: only a *wrong* placement can be picked back up —
 		# ShelfSlot.locked is only ever true after a correct placement, so
@@ -94,6 +137,9 @@ func request_pickup(requesting_peer: int) -> void:
 	collision.disabled = true
 	_held_player_node = _find_player(requesting_peer)
 	_notify_player.rpc_id(requesting_peer, true)
+	var game_state := get_tree().get_first_node_in_group("game_state")
+	if game_state:
+		game_state.host_note_pickup()  # first pickup of the round starts the clock
 
 
 @rpc("any_peer", "reliable", "call_local")
@@ -104,6 +150,22 @@ func request_drop() -> void:
 	if held_by_peer != releasing_peer:
 		return
 	_notify_player.rpc_id(releasing_peer, false)
+	_host_release_to_world()
+
+
+## Host-only. Called by NetworkManager when the holder disconnects, so their
+## items fall to the floor instead of floating frozen with a dead
+## held_by_peer that nobody can ever clear. No _notify_player here: the
+## holder is gone, so there's no one to notify.
+func host_force_release() -> void:
+	if not multiplayer.is_server():
+		return
+	if held_by_peer == 0:
+		return
+	_host_release_to_world()
+
+
+func _host_release_to_world() -> void:
 	held_by_peer = 0
 	_held_player_node = null
 	freeze = false
@@ -125,6 +187,14 @@ func host_attach_to_slot(slot_global_transform: Transform3D, slot: Node) -> void
 	freeze = true
 	collision.disabled = false
 	global_transform = slot_global_transform
+
+
+func _count_held_by(peer_id: int) -> int:
+	var count := 0
+	for other in get_tree().get_nodes_in_group("item"):
+		if other.held_by_peer == peer_id:
+			count += 1
+	return count
 
 
 func _find_player(peer_id: int) -> CoopPlayer:

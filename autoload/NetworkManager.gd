@@ -19,6 +19,11 @@ var players: Dictionary = {}      # peer_id (int) -> { "name": String }
 var local_player_name: String = "Player"
 
 var world: Node3D = null           # set by World.gd on _ready()
+# `players` only ever contains peers whose World has finished loading (the
+# host adds them in _client_world_ready), and it's synced to everyone. So it
+# doubles as the "ready" list: nothing world-related is sent to a peer until
+# it's in here, because anything sent earlier targets nodes that don't exist
+# on that peer yet and is silently lost. See is_peer_ready().
 var _spawn_points: Array[Node3D] = []
 var _next_spawn_index := 0
 
@@ -69,34 +74,23 @@ func leave_game() -> void:
 # Signal handlers
 # ---------------------------------------------------------------------------
 
-func _on_peer_connected(id: int) -> void:
-	# Only the host reacts here; clients learn about new players via the
-	# synced `players` state and spawn RPCs below. We deliberately do NOT
-	# register or spawn the new peer's own player here — we don't know
-	# their chosen name yet, and spawning with a placeholder name would
-	# leave every nameplate stuck on that placeholder (Player.gd reads the
-	# name once, at spawn time). Their actual spawn happens in
-	# _submit_player_name, once we've heard from them.
-	if not multiplayer.is_server():
-		return
-
-	# The new peer missed every earlier spawn broadcast (including the
-	# host's own self-spawn on world load), so it needs those specific
-	# players spawned for it individually, using their current position.
-	# Send the name registry FIRST — Player.gd reads NetworkManager.players
-	# once, at spawn time, so if the spawn RPC below arrives before this
-	# one does, every nameplate falls back to the scene's default text.
-	_register_players_on_all.rpc_id(id, players)
-	if world:
-		var players_node := world.get_node("Players")
-		for existing_player in players_node.get_children():
-			var existing_id := int(existing_player.name)
-			_spawn_player_on_all.rpc_id(id, existing_id, existing_player.global_position)
+func _on_peer_connected(_id: int) -> void:
+	# Deliberately nothing here. The new peer is still loading World.tscn,
+	# so any spawn sent now would be lost. The host waits for that peer's
+	# _client_world_ready (sent from register_world once its World exists)
+	# and does all the per-peer setup there.
+	pass
 
 
 func _on_peer_disconnected(id: int) -> void:
 	if not multiplayer.is_server():
 		return
+	# Drop anything they were carrying before their player node goes away,
+	# otherwise those items stay frozen mid-air with a held_by_peer that
+	# points at a peer who no longer exists — unpickable forever.
+	for item in get_tree().get_nodes_in_group("item"):
+		if item.held_by_peer == id:
+			item.host_force_release()
 	if not players.has(id):
 		return
 	players.erase(id)
@@ -108,8 +102,9 @@ func _on_connected_to_server() -> void:
 	# Client successfully reached the host: load the shared world first —
 	# the host's spawn RPCs can arrive as soon as this handshake completes,
 	# so World must already exist and be registered before that happens.
+	# Client reached the host: load the shared world. The host is told
+	# we're ready (with our name) from register_world, once it exists.
 	get_tree().change_scene_to_file(WORLD_SCENE)
-	_submit_player_name.rpc_id(1, local_player_name)
 
 
 func _on_connection_failed() -> void:
@@ -129,20 +124,41 @@ func _on_server_disconnected() -> void:
 # ---------------------------------------------------------------------------
 
 @rpc("any_peer", "reliable")
-func _submit_player_name(display_name: String) -> void:
+func _client_world_ready(display_name: String) -> void:
 	if not multiplayer.is_server():
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	if players.has(sender_id):
-		return  # already registered — ignore a duplicate/late submission
+		return  # duplicate/late message
 	players[sender_id] = {"name": display_name}
+	# Name registry first: Player.gd reads NetworkManager.players once, at
+	# spawn time, so it must land before any spawn RPC. (Same channel,
+	# reliable, so ordering is guaranteed.)
 	_register_players_on_all.rpc(players)
+	# Existing players, at their current positions, for the new peer only.
+	for existing_player in world.get_node("Players").get_children():
+		_spawn_player_on_all.rpc_id(sender_id, int(existing_player.name), existing_player.global_position)
+	# The new player, for everyone (peers still loading skip it and get it
+	# from the loop above once they're ready themselves).
 	_spawn_player_on_all.rpc(sender_id, _next_spawn_position())
+	# Items: their synchronizers filter on is_peer_ready, so flip them now.
+	for item in get_tree().get_nodes_in_group("item"):
+		var sync := item.get_node_or_null("MultiplayerSynchronizer") as MultiplayerSynchronizer
+		if sync:
+			sync.update_visibility(sender_id)
 
 
 @rpc("authority", "reliable", "call_local")
 func _register_players_on_all(current_players: Dictionary) -> void:
 	players = current_players
+	# The ready-list just changed, so re-run every player synchronizer's
+	# visibility filter — otherwise a peer that wasn't ready when the sync
+	# first checked is never added, and never sees that player move.
+	if world:
+		for player in world.get_node("Players").get_children():
+			var sync := player.get_node_or_null("MultiplayerSynchronizer") as MultiplayerSynchronizer
+			if sync:
+				sync.update_visibility()
 	player_list_changed.emit()
 
 
@@ -177,9 +193,13 @@ func register_world(world_node: Node3D, spawn_points: Array[Node3D]) -> void:
 	world = world_node
 	_spawn_points = spawn_points
 	_next_spawn_index = 0
-	# Host: spawn itself (peer id 1) once the world exists.
 	if multiplayer.is_server():
+		# Host: spawn itself (peer id 1) once the world exists.
 		_spawn_player_on_all.rpc(1, _next_spawn_position())
+	else:
+		# Client: our World exists now, so it's safe for the host to start
+		# sending us players and items.
+		_client_world_ready.rpc_id(1, local_player_name)
 
 
 func _next_spawn_position() -> Vector3:
@@ -188,6 +208,16 @@ func _next_spawn_position() -> Vector3:
 	var point := _spawn_points[_next_spawn_index % _spawn_points.size()]
 	_next_spawn_index += 1
 	return point.global_position
+
+
+## Visibility filter for item and player synchronizers: a peer only
+## receives spawns/updates once its World has loaded. Without this, a
+## synchronizer's first message (a node-path handshake) reaches a peer that
+## doesn't have the node yet, fails, and is never retried — so that peer
+## never sees the node move. Works on clients too (they sync their own
+## player to each other via the host), since `players` is synced to all.
+func is_peer_ready(peer_id: int) -> bool:
+	return players.has(peer_id)
 
 
 func is_host() -> bool:

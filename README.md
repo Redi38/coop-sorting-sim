@@ -1,5 +1,9 @@
 # Co-op Arcane Sorting Sim — Milestone 1 scaffold
 
+> Design direction (cozy, score-only, match-by-type, parallel co-op) lives
+> in [DESIGN.md](DESIGN.md); the visual style guide and asset specs in
+> [ART_DIRECTION.md](ART_DIRECTION.md).
+
 Goal of this scaffold: two Godot clients can host/join, spawn into a shared
 room, pick up items, and place them in shelf slots — with the host as the
 single source of truth for item state. That's the whole milestone; no
@@ -13,8 +17,16 @@ autoload/NetworkManager.gd   # ENet host/join, player spawn/despawn (host-author
 data/item_catalog.gd         # Categories (id/display name/color) + item name+description
                               # templates — the clue data. Not an autoload; referenced via
                               # its class_name (ItemCatalog) from World/Item/ShelfSlot.
+assets/textures/              # Tileable albedo + normal PNGs (regenerate: python3 tools/gen_textures.py)
+assets/materials/             # StandardMaterial3D resources (world-triplanar for floor/walls/wood)
+assets/models/                # Low-poly item models per type (pivot at base; "Tint*" meshes get colour)
+assets/fonts/                 # Alegreya (signs/labels) + Nunito (UI), OFL
+assets/ui/cozy_theme.tres     # Project-wide UI theme
+tools/gen_textures.py         # Procedural texture generator
 scenes/main_menu/            # Host/Join screen
-scenes/world/                # The room: floor, spawn points, shelf slot grid, item spawner
+scenes/world/                # The room: floor, spawn points, shelf slot grid, item spawner,
+                              # GameState (host-authoritative round state + timer)
+scenes/game_hud/              # Progress bar, per-category counts, timer, win screen
 scenes/player/                # First-person body, camera, interact ray, hold point, capacity HUD
 scenes/item/                  # Pickup/place-able object, host-authoritative state, clue display
 scenes/shelf_slot/            # Trigger volume that validates category + locks on correct place
@@ -23,24 +35,18 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 ## Setup steps (do these in the Godot editor before running)
 
 1. Open the folder as a Godot 4.3+ project.
-2. **Input Map** (Project Settings → Input Map) — add these actions, since
-   they're referenced by `Player.gd` but not safe to hand-write in this
-   scaffold's `project.godot`:
-   - `move_forward` → W
-   - `move_back` → S
-   - `move_left` → A
-   - `move_right` → D
-   - `jump` → Space
-   - `interact` → E
-   - `ui_cancel` already exists by default (Esc) — used to toggle mouse capture.
+2. **Input Map** is already defined in `project.godot`: WASD to move,
+   Space to jump, E to interact (pick up / place), Q to drop the last
+   item you picked up, Esc to toggle mouse capture.
 3. Open each `.tscn` once in the editor and let Godot re-save it — these
    were hand-written as text, so node references (`@onready` paths, unique
    names like `%HostButton`) should resolve, but double-check the Inspector
    matches what the scripts expect, especially the `MultiplayerSynchronizer`
    replication configs on `Player.tscn` and `Item.tscn`.
-4. Swap the placeholder `BoxMesh`/`CapsuleMesh` for your low-poly art
-   whenever it's ready — nothing else needs to change, since the scripts
-   reference nodes by name, not by mesh.
+4. Art is a first procedural pass: swap textures, item models or the UI
+   theme any time — see ART_DIRECTION.md → "Replacing placeholder art".
+   Shelf units, signs, lights, ceiling and wainscot are built in code by
+   `World.gd` (deterministic, so every peer builds the same room).
 
 ## How the networking is structured
 
@@ -48,7 +54,31 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
   directly — they call `request_pickup` / `request_place` RPCs on the host
   (`@rpc("any_peer")` methods with an `if not multiplayer.is_server(): return`
   guard), and the host is the only one that mutates `held_by_peer`,
-  `placed`, and `locked`.
+  `placed`, and `locked`. The host identifies the requester with
+  `multiplayer.get_remote_sender_id()` rather than trusting a peer id
+  passed as an argument, and enforces the carry limit itself.
+- **Late joiners** get a one-shot snapshot of every filled/locked slot:
+  a joining client's `World._ready()` calls `_request_slot_states` on the
+  host, which replies with a single `_receive_slot_states` RPC.
+- **Disconnects** release everything the departing peer was holding
+  (`CoopItem.host_force_release`), so items drop to the floor instead of
+  staying frozen and unpickable.
+- **Filled slots** reject further placements until the wrong item in
+  them is picked back up.
+- **Join handshake / "ready" peers.** A joining client loads `World.tscn`
+  first, then (from `NetworkManager.register_world`) tells the host it's
+  ready with `_client_world_ready(name)`. Only then does the host register
+  it in `players`, spawn players for it, and let items reach it. `players`
+  is synced to everyone and only ever holds ready peers, so it doubles as
+  the ready-list: item and player `MultiplayerSynchronizer`s use
+  `NetworkManager.is_peer_ready` as a visibility filter. Without this, a
+  synchronizer's first message (a node-path handshake) can reach a peer
+  before the node exists there, fail, and never be retried — that peer
+  then never sees the node move.
+- **Bandwidth.** Item state syncs on change (`replication_mode = 2`), not
+  every frame, and clients never simulate item physics (items are frozen
+  on clients; only the host runs physics). Idle upload per client dropped
+  from ~1 MB/s to ~10 KB/s (just player transforms).
 - **Player transforms** are the one thing each client is authoritative over
   for itself (`set_multiplayer_authority(id)` in `NetworkManager._spawn_player_on_all`),
   synced to everyone else via each `Player.tscn`'s `MultiplayerSynchronizer`.
@@ -80,6 +110,28 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
   categories laid out side-by-side along X, instead of one 60-wide row
   per category.
 
+## The round (game loop)
+
+- **Goal:** sort every item. The round ends when every shelf slot is
+  locked (all 180 items placed correctly).
+- **Clock** starts on the round's first pickup, so waiting for friends in
+  the room doesn't count. The host owns `elapsed`; clients tick it
+  locally between snapshots and get resynced every 5 s.
+- **HUD** (top center): `Sorted n / 180`, mistake count, a progress bar,
+  per-category counts in each category's own color, and the timer.
+- **Mistakes** are counted per wrong placement; picking the wrong item
+  back out doesn't undo the mistake.
+- **Win screen:** time, mistakes, accuracy, and each player's sorted /
+  mistake counts (★ for the top sorter). The host sees **Play again**;
+  clients see a waiting message. Everyone can **Leave game**.
+- **Play again** resets in place (`World.host_restart_round`): items are
+  despawned and respawned through the MultiplayerSpawner, slots are
+  cleared with one RPC, every peer clears its carried list, and each
+  player is teleported back to a spawn point. Nobody reconnects.
+- **Late joiners** pull a GameState snapshot on join, the same way they
+  pull slot state, so they see the correct progress, timer, and (if the
+  round is already over) the win screen.
+
 ## Testing the milestone locally
 
 1. Export or just run the project from the editor twice (Debug → Run
@@ -100,11 +152,20 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
    - A correct placement locks that slot (further place attempts on it are
 	 silently rejected) and the rest of that category's slots stay open
 	 for the rest of that category's items.
-   - A wrong-category placement is flagged (indicator turns red) but still
-	 occupies the slot — per the design doc, misplacements are flagged,
-	 not silently accepted; an "unplace on wrong" / return-to-shelf flow
-	 isn't built yet (see below).
-   - Trying to pick up a 4th item while already holding 3 does nothing.
+   - A wrong-category placement is flagged (indicator turns red) and
+	 occupies the slot until someone picks the wrong item back out; a
+	 filled slot rejects further placements.
+   - Trying to pick up a 4th item while already holding 3 does nothing,
+	 even when spamming E (the host enforces the limit).
+   - Q drops the most recently picked-up item.
+   - A client that joins after items were sorted sees the correct
+	 green/red slot colors.
+   - If a client quits while carrying items, those items fall to the
+	 floor and anyone can pick them up.
+   - The timer stays at 00:00 (dimmed) until the first pickup, then runs
+	 on both screens and matches to within a second.
+   - Sorting the last item shows the win screen on every client; the
+	 host's Play again respawns everything and puts everyone back at spawn.
 
 ## Deliberately not built yet (next after this loop feels good)
 
@@ -112,13 +173,8 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 - Shared progression perks (extra carry slots, sprint, sort-hint pulse)
 - Ping system
 - Reconnect support / session persistence across drops
-- Held-item visual offset per item, non-boilerplate low-poly art (still
-  placeholder `BoxMesh`/`CapsuleMesh`, color-coded by category)
-- An "unplace on wrong" / return-to-shelf flow — right now a wrong-category
-  placement flags red and occupies the slot, but nothing clears it, so a
-  slot with a wrong item in it just sits wrong until a correct item takes
-  its place (still allowed, since `locked` only becomes true on a *correct*
-  placement)
+- Held-item visual offset per item; hand-made art to replace the
+  procedural first pass (see ART_DIRECTION.md → "Next art steps")
 - Playtesting `TARGET_ITEM_COUNT` (180) and `SLOTS_PER_CATEGORY` (60) at
   the top of the 150-300 spec range, and tuning `SLOTS_PER_ROW`/spacing
   once real low-poly shelf art replaces the placeholder pads

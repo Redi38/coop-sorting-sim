@@ -1,0 +1,50 @@
+[gd_scene format=3]
+
+[ext_resource type="Material" path="res://assets/materials/brass.tres" id="1"]
+
+[sub_resource type="StandardMaterial3D" id="leather"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.75
+
+[sub_resource type="StandardMaterial3D" id="pages"]
+albedo_color = Color(0.93, 0.87, 0.74, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="cover"]
+size = Vector3(0.26, 0.014, 0.2)
+
+[sub_resource type="BoxMesh" id="spine"]
+size = Vector3(0.016, 0.078, 0.2)
+
+[sub_resource type="BoxMesh" id="block"]
+size = Vector3(0.242, 0.05, 0.188)
+
+[sub_resource type="BoxMesh" id="clasp"]
+size = Vector3(0.03, 0.06, 0.035)
+
+[node name="Tome" type="Node3D"]
+
+[node name="TintCoverBottom" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.007, 0)
+mesh = SubResource("cover")
+surface_material_override/0 = SubResource("leather")
+
+[node name="Pages" type="MeshInstance3D" parent="."]
+position = Vector3(0.005, 0.039, 0)
+mesh = SubResource("block")
+surface_material_override/0 = SubResource("pages")
+
+[node name="TintCoverTop" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.071, 0)
+mesh = SubResource("cover")
+surface_material_override/0 = SubResource("leather")
+
+[node name="TintSpine" type="MeshInstance3D" parent="."]
+position = Vector3(-0.122, 0.039, 0)
+mesh = SubResource("spine")
+surface_material_override/0 = SubResource("leather")
+
+[node name="Clasp" type="MeshInstance3D" parent="."]
+position = Vector3(0.128, 0.039, 0)
+mesh = SubResource("clasp")
+surface_material_override/0 = ExtResource("1")

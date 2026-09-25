@@ -15,17 +15,27 @@ class Category:
 	var id: String
 	var display_name: String
 	var color: Color
+	var model_path: String     # low-poly model scene; pivot at the base (see assets/models/)
+	var size: Vector3          # collision box, resting on the model's base
+	var sign_text: String      # shown on the shelf sign under the category name
 
-	func _init(p_id: String, p_display_name: String, p_color: Color) -> void:
+	func _init(p_id: String, p_display_name: String, p_color: Color,
+			p_model_path: String, p_size: Vector3, p_sign_text: String) -> void:
 		id = p_id
 		display_name = p_display_name
 		color = p_color
+		model_path = p_model_path
+		size = p_size
+		sign_text = p_sign_text
 
 
 static var _categories: Array[Category] = [
-	Category.new("potion", "Potion", Color(0.25, 0.55, 0.95)),
-	Category.new("tome", "Tome", Color(0.85, 0.65, 0.15)),
-	Category.new("artifact", "Artifact", Color(0.6, 0.25, 0.75)),
+	Category.new("potion", "Potions", Color(0.3, 0.62, 0.95),
+		"res://assets/models/potion.tscn", Vector3(0.21, 0.31, 0.21), "brews meant to be drunk"),
+	Category.new("tome", "Tomes", Color(0.86, 0.6, 0.2),
+		"res://assets/models/tome.tscn", Vector3(0.27, 0.08, 0.2), "bound books of every kind"),
+	Category.new("artifact", "Artifacts", Color(0.68, 0.36, 0.85),
+		"res://assets/models/artifact.tscn", Vector3(0.22, 0.26, 0.22), "curios, charms and relics"),
 ]
 
 # Hand-authored clue templates — real display names + short descriptions,
