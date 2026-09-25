@@ -1,0 +1,54 @@
+[gd_scene format=3 uid="uid://ygbr5dxydmxy"]
+
+[ext_resource type="Script" uid="uid://cwu8c1jkg01g" path="res://scenes/main_menu/MainMenu.gd" id="1"]
+
+[node name="MainMenu" type="Control" unique_id=454040130]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="CenterContainer" type="CenterContainer" parent="." unique_id=1384639592]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer" unique_id=1131215473]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+
+[node name="Title" type="Label" parent="CenterContainer/VBoxContainer" unique_id=640618914]
+layout_mode = 2
+text = "Co-op Arcane Sorting Sim"
+horizontal_alignment = 1
+
+[node name="NameInput" type="LineEdit" parent="CenterContainer/VBoxContainer" unique_id=1471574308]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Your name"
+
+[node name="IpInput" type="LineEdit" parent="CenterContainer/VBoxContainer" unique_id=651055377]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Host IP (blank = 127.0.0.1)"
+
+[node name="HostButton" type="Button" parent="CenterContainer/VBoxContainer" unique_id=1676232133]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Host Game"
+
+[node name="JoinButton" type="Button" parent="CenterContainer/VBoxContainer" unique_id=1265202117]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Join Game"
+
+[node name="StatusLabel" type="Label" parent="CenterContainer/VBoxContainer" unique_id=1712140783]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 1
