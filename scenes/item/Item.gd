@@ -11,6 +11,7 @@ extends RigidBody3D
 @export var item_id: String = ""
 @export var category: String = ""          # e.g. "potion", "tome", "artifact"
 @export var display_name: String = ""
+@export var description: String = ""       # the textual clue players read
 @export var correct_slot_id: String = ""
 
 var held_by_peer: int = 0                   # 0 = not held
@@ -24,9 +25,32 @@ var _held_player_node: CoopPlayer = null
 
 func _ready() -> void:
 	add_to_group("item")
-	if label:
-		label.text = display_name if display_name != "" else item_id
+	_refresh_clue_display()
 	set_multiplayer_authority(1)  # host always owns item logic
+
+
+func _refresh_clue_display() -> void:
+	# The color clue: matches the ShelfSlot indicator for the same category,
+	# so a player can sort by color alone before reading anything. The text
+	# clue (name + short description) is the fallback / tie-breaker for
+	# categories that end up sharing a similar color at a glance.
+	var cat := ItemCatalog.get_category(category)
+	if mesh and cat:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = cat.color
+		mesh.set_surface_override_material(0, mat)
+	if label:
+		var name_line := display_name if display_name != "" else item_id
+		label.text = name_line + ("\n" + description if description != "" else "")
+
+
+# category/display_name/description arrive on clients via the
+# MultiplayerSynchronizer at spawn time, after _ready() has already run
+# with empty defaults — re-apply the clue display once they land.
+func _set(property: StringName, value) -> bool:
+	if property in ["category", "display_name", "description"] and is_inside_tree():
+		call_deferred("_refresh_clue_display")
+	return false
 
 
 func _physics_process(_delta: float) -> void:

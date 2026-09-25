@@ -36,12 +36,16 @@ properties/7/replication_mode = 0
 properties/8/path = NodePath(".:display_name")
 properties/8/spawn = true
 properties/8/replication_mode = 0
+properties/9/path = NodePath(".:description")
+properties/9/spawn = true
+properties/9/replication_mode = 0
 
 [node name="Item" type="RigidBody3D"]
 script = ExtResource("1")
 item_id = ""
 category = ""
 display_name = ""
+description = ""
 correct_slot_id = ""
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

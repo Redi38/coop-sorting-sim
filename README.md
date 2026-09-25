@@ -10,10 +10,13 @@ categories UI polish, no unlocks, no zones yet.
 ```
 project.godot
 autoload/NetworkManager.gd   # ENet host/join, player spawn/despawn (host-authoritative)
+data/item_catalog.gd         # Categories (id/display name/color) + item name+description
+                              # templates — the clue data. Not an autoload; referenced via
+                              # its class_name (ItemCatalog) from World/Item/ShelfSlot.
 scenes/main_menu/            # Host/Join screen
-scenes/world/                # The room: floor, spawn points, shelf slots, item spawner
-scenes/player/                # First-person body, camera, interact ray, hold point
-scenes/item/                  # Pickup/place-able object, host-authoritative state
+scenes/world/                # The room: floor, spawn points, shelf slot grid, item spawner
+scenes/player/                # First-person body, camera, interact ray, hold point, capacity HUD
+scenes/item/                  # Pickup/place-able object, host-authoritative state, clue display
 scenes/shelf_slot/            # Trigger volume that validates category + locks on correct place
 ```
 
@@ -56,6 +59,22 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 - **Lock-on-complete** lives entirely in `ShelfSlot.request_place`: once a
   correct placement sets `locked = true`, every later `request_place` call
   on that slot is rejected before it touches anything.
+- **Shelf slots are generated, not hand-placed.** `World._spawn_shelf_slots()`
+  builds a grid (`SLOTS_PER_CATEGORY` per category) from `ItemCatalog`'s
+  fixed category list. It's pure deterministic math with no randomness, so
+  every peer builds an identical node tree at `_ready()` — that's what lets
+  `ShelfSlot`'s host-authoritative RPCs resolve to the same NodePath on
+  host and clients without needing a MultiplayerSpawner for slots (only
+  items need one, since their scatter position is randomized on the host).
+- **Clue data is centralized in `ItemCatalog`** (`data/item_catalog.gd`):
+  each category has a color (the visual clue, shown on both the item mesh
+  and the shelf slot indicator) and a display name; each item template has
+  a name + one-line description (the textual clue). `World._spawn_items()`
+  calls `ItemCatalog.get_item_templates(TARGET_ITEM_COUNT)`, which cycles
+  the hand-authored pool with numbered repeats ("Shimmering Elixir (Batch
+  2)") to reach whatever count is asked for — so raising `TARGET_ITEM_COUNT`
+  toward the design doc's 150–300 doesn't require writing 300 items by hand.
+  `TARGET_ITEM_COUNT` is currently 60, kept modest for local testing.
 
 ## Testing the milestone locally
 
@@ -65,16 +84,22 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 2. Instance A: click **Host Game**.
 3. Instance B: leave IP blank (defaults to `127.0.0.1`) and click **Join
    Game**.
-4. Both should spawn into `World.tscn` at different spawn points. Walk up
-   to a box (item), press E to pick it up, walk to a colored pad (shelf
-   slot) with matching category, press E to place it. Confirm:
+4. Both should spawn into `World.tscn` at different spawn points, facing a
+   grid of 60 color-coded boxes (item name + one-line clue on a floating
+   label) and, behind them, three rows of 6 colored/labeled pads — one row
+   per category, color matching the items of that category. Walk up to a
+   box, press E to pick it up (a top-left HUD label tracks `Carrying: n/3`),
+   walk to a pad whose color/label matches the item's category, press E to
+   place it. Confirm:
    - The other client sees the pickup/placement happen in real time.
-   - A correct placement locks the slot (further place attempts on it are
-     silently rejected).
+   - A correct placement locks that slot (further place attempts on it are
+	 silently rejected) and the other 5 slots in that category's row stay
+	 open for the rest of that category's items.
    - A wrong-category placement is flagged (indicator turns red) but still
-     occupies the slot — per the design doc, misplacements are flagged,
-     not silently accepted; you'll likely want an "unplace on wrong" or
-     "return to shelf" flow next, which isn't built yet.
+	 occupies the slot — per the design doc, misplacements are flagged,
+	 not silently accepted; an "unplace on wrong" / return-to-shelf flow
+	 isn't built yet (see below).
+   - Trying to pick up a 4th item while already holding 3 does nothing.
 
 ## Deliberately not built yet (next after this loop feels good)
 
@@ -82,5 +107,13 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 - Shared progression perks (extra carry slots, sprint, sort-hint pulse)
 - Ping system
 - Reconnect support / session persistence across drops
-- Real item/clue data (currently 6 hardcoded demo items, 3 categories)
-- Carry-capacity UI, held-item visual offset per item, non-boilerplate art
+- Held-item visual offset per item, non-boilerplate low-poly art (still
+  placeholder `BoxMesh`/`CapsuleMesh`, color-coded by category)
+- An "unplace on wrong" / return-to-shelf flow — right now a wrong-category
+  placement flags red and occupies the slot, but nothing clears it, so a
+  slot with a wrong item in it just sits wrong until a correct item takes
+  its place (still allowed, since `locked` only becomes true on a *correct*
+  placement)
+- Raising `TARGET_ITEM_COUNT` (World.gd) from its current 60 toward the
+  150–300 spec, and playtesting whether `SLOTS_PER_CATEGORY` (currently 6)
+  needs to scale with it

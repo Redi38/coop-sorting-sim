@@ -48,5 +48,14 @@ target_position = Vector3(0, 0, -2.5)
 [node name="HoldPoint" type="Marker3D" parent="Camera3D"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, -0.3, -0.8)
 
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="CapacityLabel" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 220.0
+offset_bottom = 40.0
+text = "Carrying: 0 / 3"
+
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 replication_config = SubResource("SceneReplicationConfig_1")

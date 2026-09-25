@@ -25,3 +25,9 @@ surface_material_override/0 = SubResource("StandardMaterial3D_1")
 
 [node name="AttachPoint" type="Marker3D" parent="."]
 position = Vector3(0, 0.1, 0)
+
+[node name="ClueLabel" type="Label3D" parent="."]
+position = Vector3(0, 0.4, 0)
+billboard = 1
+font_size = 20
+text = ""

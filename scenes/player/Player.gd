@@ -16,6 +16,7 @@ const CARRY_CAPACITY := 3
 @onready var interact_ray: RayCast3D = $Camera3D/InteractRay
 @onready var hold_point: Marker3D = $Camera3D/HoldPoint
 @onready var nameplate: Label3D = $Nameplate
+@onready var capacity_label: Label = $HUD/CapacityLabel
 
 var held_items: Array[Node] = []
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -26,8 +27,10 @@ func _ready() -> void:
 	camera.current = is_local
 	set_process_unhandled_input(is_local)
 	set_physics_process(is_local)
+	capacity_label.get_parent().visible = is_local  # only the local player needs their own HUD
 	if is_local:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_update_capacity_label()
 	var id := get_multiplayer_authority()
 	if NetworkManager.players.has(id):
 		nameplate.text = NetworkManager.players[id].get("name", "Player")
@@ -97,10 +100,17 @@ func _try_place(slot: Node) -> void:
 func note_item_held(item: Node) -> void:
 	if item not in held_items:
 		held_items.append(item)
+	_update_capacity_label()
 
 
 func note_item_released(item: Node) -> void:
 	held_items.erase(item)
+	_update_capacity_label()
+
+
+func _update_capacity_label() -> void:
+	if capacity_label:
+		capacity_label.text = "Carrying: %d / %d" % [held_items.size(), CARRY_CAPACITY]
 
 
 func get_hold_point() -> Marker3D:
