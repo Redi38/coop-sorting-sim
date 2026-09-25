@@ -74,7 +74,11 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
   the hand-authored pool with numbered repeats ("Shimmering Elixir (Batch
   2)") to reach whatever count is asked for — so raising `TARGET_ITEM_COUNT`
   toward the design doc's 150–300 doesn't require writing 300 items by hand.
-  `TARGET_ITEM_COUNT` is currently 60, kept modest for local testing.
+  `TARGET_ITEM_COUNT` is now 180 (mid-range of the 150-300 spec), the
+  floor was enlarged to 50x50 (from 20x20), and `_spawn_shelf_slots()`
+  wraps each category's slots into a grid (`SLOTS_PER_ROW`) with
+  categories laid out side-by-side along X, instead of one 60-wide row
+  per category.
 
 ## Testing the milestone locally
 
@@ -85,16 +89,17 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 3. Instance B: leave IP blank (defaults to `127.0.0.1`) and click **Join
    Game**.
 4. Both should spawn into `World.tscn` at different spawn points, facing a
-   grid of 60 color-coded boxes (item name + one-line clue on a floating
-   label) and, behind them, three rows of 6 colored/labeled pads — one row
-   per category, color matching the items of that category. Walk up to a
+   field of 180 color-coded boxes (item name + one-line clue on a floating
+   label) and, behind them, three side-by-side blocks of 60 colored/labeled
+   pads each (wrapped into rows of `SLOTS_PER_ROW`) — one block per
+   category, color matching the items of that category. Walk up to a
    box, press E to pick it up (a top-left HUD label tracks `Carrying: n/3`),
    walk to a pad whose color/label matches the item's category, press E to
    place it. Confirm:
    - The other client sees the pickup/placement happen in real time.
    - A correct placement locks that slot (further place attempts on it are
-	 silently rejected) and the other 5 slots in that category's row stay
-	 open for the rest of that category's items.
+	 silently rejected) and the rest of that category's slots stay open
+	 for the rest of that category's items.
    - A wrong-category placement is flagged (indicator turns red) but still
 	 occupies the slot — per the design doc, misplacements are flagged,
 	 not silently accepted; an "unplace on wrong" / return-to-shelf flow
@@ -114,6 +119,6 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
   slot with a wrong item in it just sits wrong until a correct item takes
   its place (still allowed, since `locked` only becomes true on a *correct*
   placement)
-- Raising `TARGET_ITEM_COUNT` (World.gd) from its current 60 toward the
-  150–300 spec, and playtesting whether `SLOTS_PER_CATEGORY` (currently 6)
-  needs to scale with it
+- Playtesting `TARGET_ITEM_COUNT` (180) and `SLOTS_PER_CATEGORY` (60) at
+  the top of the 150-300 spec range, and tuning `SLOTS_PER_ROW`/spacing
+  once real low-poly shelf art replaces the placeholder pads
