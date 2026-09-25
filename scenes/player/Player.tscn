@@ -44,6 +44,7 @@ current = false
 
 [node name="InteractRay" type="RayCast3D" parent="Camera3D"]
 target_position = Vector3(0, 0, -2.5)
+collide_with_areas = true
 
 [node name="HoldPoint" type="Marker3D" parent="Camera3D"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, -0.3, -0.8)

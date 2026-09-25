@@ -16,6 +16,7 @@ extends RigidBody3D
 
 var held_by_peer: int = 0                   # 0 = not held
 var placed: bool = false
+var current_slot: Node = null               # the ShelfSlot this item is sitting in, if placed
 var _held_player_node: CoopPlayer = null
 
 @onready var mesh: MeshInstance3D = $MeshInstance3D
@@ -74,8 +75,19 @@ func _physics_process(_delta: float) -> void:
 func request_pickup(requesting_peer: int) -> void:
 	if not multiplayer.is_server():
 		return
-	if placed or held_by_peer != 0:
-		return  # already held or locked in a slot
+	if held_by_peer != 0:
+		return  # someone's already holding it
+	if placed:
+		# Sitting in a slot: only a *wrong* placement can be picked back up —
+		# ShelfSlot.locked is only ever true after a correct placement, so
+		# this is the "unplace on wrong" / return-to-shelf flow. Reaching
+		# in and taking a correctly-placed item is exactly what lock-on-
+		# complete exists to prevent.
+		if current_slot == null or current_slot.locked:
+			return
+		current_slot.host_free_slot()
+		current_slot = null
+		placed = false
 
 	held_by_peer = requesting_peer
 	freeze = true
@@ -101,7 +113,7 @@ func request_drop() -> void:
 # request_place is called on the ShelfSlot, not here — see ShelfSlot.gd,
 # which calls these once it has validated category + lock state:
 
-func host_attach_to_slot(slot_global_transform: Transform3D) -> void:
+func host_attach_to_slot(slot_global_transform: Transform3D, slot: Node) -> void:
 	if not multiplayer.is_server():
 		return
 	if held_by_peer != 0:
@@ -109,6 +121,7 @@ func host_attach_to_slot(slot_global_transform: Transform3D) -> void:
 	held_by_peer = 0
 	_held_player_node = null
 	placed = true
+	current_slot = slot
 	freeze = true
 	collision.disabled = false
 	global_transform = slot_global_transform

@@ -50,11 +50,23 @@ func request_place(item_path: NodePath, requesting_peer: int) -> void:
 		return  # stale request or the player isn't actually holding it
 
 	var correct := item.category == accepted_category
-	item.host_attach_to_slot(attach_point.global_transform)
+	item.host_attach_to_slot(attach_point.global_transform, self)
 	filled = true
 	if correct:
 		locked = true  # lock-on-complete: correct placements can't be undone
 	_sync_state.rpc(filled, locked, correct)
+
+
+# Called directly (host-side, not an RPC) by CoopItem.request_pickup when a
+# *wrong* item sitting in this slot gets picked back up — the "unplace on
+# wrong" flow. Never fires on a locked slot: request_pickup checks `locked`
+# before calling this, and a correct placement is the only way `locked`
+# becomes true.
+func host_free_slot() -> void:
+	if not multiplayer.is_server():
+		return
+	filled = false
+	_sync_state.rpc(false, locked, false)
 
 
 @rpc("authority", "reliable", "call_local")
