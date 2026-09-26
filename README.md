@@ -19,13 +19,14 @@ data/item_catalog.gd         # Categories (id/display name/color) + item name+de
                               # its class_name (ItemCatalog) from World/Item/ShelfSlot.
 assets/textures/              # Tileable albedo + normal PNGs (regenerate: python3 tools/gen_textures.py)
 assets/materials/             # StandardMaterial3D resources (world-triplanar for floor/walls/wood)
-assets/models/                # Low-poly item models per type (pivot at base; "Tint*" meshes get colour)
+assets/models/                # Low-poly item models, 8 shapes across 6 types (pivot at base; "Tint*" meshes get the item's tint)
 assets/fonts/                 # Alegreya (signs/labels) + Nunito (UI), OFL
 assets/ui/cozy_theme.tres     # Project-wide UI theme
 tools/gen_textures.py         # Procedural texture generator
+tests/TestAim.gd              # Headless test: aim + interact for every type/shape (see file header)
 scenes/main_menu/            # Host/Join screen
 scenes/world/                # The room: floor, spawn points, shelf slot grid, item spawner,
-                              # GameState (host-authoritative round state + timer)
+							  # GameState (host-authoritative round state + timer)
 scenes/game_hud/              # Progress bar, per-category counts, timer, win screen
 scenes/player/                # First-person body, camera, interact ray, hold point, capacity HUD
 scenes/item/                  # Pickup/place-able object, host-authoritative state, clue display

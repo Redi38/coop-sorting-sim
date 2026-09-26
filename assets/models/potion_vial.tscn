@@ -1,0 +1,67 @@
+[gd_scene format=3]
+
+[sub_resource type="StandardMaterial3D" id="liquid"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.12
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 0.35
+rim_enabled = true
+rim = 0.6
+
+[sub_resource type="StandardMaterial3D" id="clear_glass"]
+albedo_color = Color(0.85, 0.92, 0.9, 1)
+roughness = 0.1
+
+[sub_resource type="StandardMaterial3D" id="wax"]
+albedo_color = Color(0.62, 0.16, 0.14, 1)
+roughness = 0.6
+
+[sub_resource type="CylinderMesh" id="body"]
+top_radius = 0.038
+bottom_radius = 0.042
+height = 0.19
+radial_segments = 12
+rings = 1
+
+[sub_resource type="SphereMesh" id="bottom"]
+radius = 0.042
+height = 0.06
+radial_segments = 12
+rings = 4
+
+[sub_resource type="CylinderMesh" id="neck"]
+top_radius = 0.022
+bottom_radius = 0.034
+height = 0.04
+radial_segments = 10
+rings = 1
+
+[sub_resource type="CylinderMesh" id="seal"]
+top_radius = 0.028
+bottom_radius = 0.026
+height = 0.03
+radial_segments = 10
+rings = 1
+
+[node name="PotionVial" type="Node3D"]
+
+[node name="TintLiquid" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.125, 0)
+mesh = SubResource("body")
+surface_material_override/0 = SubResource("liquid")
+
+[node name="TintBottom" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.03, 0)
+mesh = SubResource("bottom")
+surface_material_override/0 = SubResource("liquid")
+
+[node name="Neck" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.24, 0)
+mesh = SubResource("neck")
+surface_material_override/0 = SubResource("clear_glass")
+
+[node name="Seal" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.275, 0)
+mesh = SubResource("seal")
+surface_material_override/0 = SubResource("wax")

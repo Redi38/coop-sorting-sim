@@ -43,9 +43,9 @@ func _ready() -> void:
 		indicator.set_surface_override_material(0, _indicator_material)
 	var cat := ItemCatalog.get_category(accepted_category)
 	if cat:
-		# Muted felt with a hint of the category color, so empty slots
-		# read as "part of the furniture" rather than bright UI squares.
-		_empty_color = FELT.lerp(cat.color, 0.35)
+		# Plain felt: slots never hint at their type by colour (DESIGN.md —
+		# the sign above the unit says what belongs here).
+		_empty_color = FELT
 		if clue_label:
 			clue_label.text = cat.display_name
 	_update_indicator(_empty_color)

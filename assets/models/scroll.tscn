@@ -1,0 +1,63 @@
+[gd_scene format=3]
+
+[ext_resource type="Material" path="res://assets/materials/parchment.tres" id="1"]
+[ext_resource type="Material" path="res://assets/materials/shelf_wood.tres" id="2"]
+
+[sub_resource type="StandardMaterial3D" id="ribbon"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.55
+
+[sub_resource type="CylinderMesh" id="roll"]
+top_radius = 0.042
+bottom_radius = 0.042
+height = 0.26
+radial_segments = 14
+rings = 1
+
+[sub_resource type="CylinderMesh" id="knob"]
+top_radius = 0.018
+bottom_radius = 0.024
+height = 0.035
+radial_segments = 8
+rings = 1
+
+[sub_resource type="CylinderMesh" id="band"]
+top_radius = 0.047
+bottom_radius = 0.047
+height = 0.03
+radial_segments = 14
+rings = 1
+
+[sub_resource type="CylinderMesh" id="seal"]
+top_radius = 0.022
+bottom_radius = 0.022
+height = 0.012
+radial_segments = 10
+rings = 1
+
+[node name="Scroll" type="Node3D"]
+
+[node name="Roll" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0.042, 0)
+mesh = SubResource("roll")
+surface_material_override/0 = ExtResource("1")
+
+[node name="KnobL" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, -0.145, 0.042, 0)
+mesh = SubResource("knob")
+surface_material_override/0 = ExtResource("2")
+
+[node name="KnobR" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.145, 0.042, 0)
+mesh = SubResource("knob")
+surface_material_override/0 = ExtResource("2")
+
+[node name="TintBand" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0.042, 0)
+mesh = SubResource("band")
+surface_material_override/0 = SubResource("ribbon")
+
+[node name="TintSeal" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.042, 0.049)
+mesh = SubResource("seal")
+surface_material_override/0 = SubResource("ribbon")

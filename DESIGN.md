@@ -74,6 +74,24 @@ talking. Co-op features are optional conveniences:
 - Light social touches: waving, handing an item to a friend.
 - The zone split from the old roadmap becomes optional, not required.
 
+## Status
+
+**Step 2 (matching by type) — done.**
+- Six types: Potions, Tomes, Scrolls, Crystals, Keys, Candles (30 each).
+- Eight shapes: Potions come as a round flask *or* a slim vial, Crystals as
+  an orb *or* a grown cluster — same type, different shapes, so players
+  sort by what a thing *is*.
+- Items take a random jewel tone from one palette shared by all types.
+  Shelves, slots and the HUD are colour-neutral.
+- Each shelf sign shows the type, a one-line rule ("rolled writings,
+  sealed or tied") and brass statuettes of every shape that belongs there.
+- Names and descriptions are built each round from per-type pools
+  (6 nouns × 6 qualifiers = 36 unique per type). Every description carries
+  a hint of the type ("bound", "rolled", "a sip").
+- Look-alikes across types (e.g. an ink bottle that isn't a Potion) are
+  just data now — a pool entry pointing at another type's model — ready
+  for later archives.
+
 ## Out of scope (for now)
 
 Fail states, timers that end the round, competitive modes, asymmetric

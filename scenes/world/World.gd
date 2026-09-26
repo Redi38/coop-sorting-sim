@@ -16,16 +16,21 @@ const SLOT_SCENE := preload("res://scenes/shelf_slot/ShelfSlot.tscn")
 const TARGET_ITEM_COUNT := 180
 # One slot per item within a category (items are 60/category at the count
 # above: 180 / 3 categories), since each item needs its own lockable slot.
-const SLOTS_PER_CATEGORY := 60
+# Every type gets the same number of slots (180 / 6 = 30).
+var SLOTS_PER_CATEGORY: int = int(ceil(float(TARGET_ITEM_COUNT) / ItemCatalog.get_categories().size()))
 # Each category gets one bookshelf unit: SLOTS_PER_ROW columns, stacked
 # into as many shelves (levels) as needed — 60 slots = 12 x 5.
-const SLOTS_PER_ROW := 12
-const SLOT_SPACING := 0.5          # between columns, metres
+const SLOTS_PER_ROW := 10
+const SLOT_SPACING := 0.45         # between columns, metres
 const LEVEL_HEIGHT := 0.5          # between shelf boards
 const FIRST_LEVEL_Y := 0.3         # top surface of the lowest board
 const SHELF_FRONT_Z := -8.0        # front face of every unit
 const SHELF_DEPTH := 0.42
-const SHELF_CATEGORY_GAP := 2.2    # walkway between units
+const SHELF_CATEGORY_GAP := 2.2    # preferred walkway between units
+const MIN_UNIT_GAP := 1.3          # squeeze to this before wrapping to side walls
+const ROOM_HALF_WIDTH := 21.0      # inner wall faces at x = +/-21 (see World.tscn)
+const WALL_MARGIN := 1.0
+const SIDE_WALL_Z_START := -5.0    # first side-wall unit centre
 const SCATTER_HALF_EXTENT := 18.0
 
 const MAT_SHELF := preload("res://assets/materials/shelf_wood.tres")
@@ -34,7 +39,7 @@ const MAT_BRASS := preload("res://assets/materials/brass.tres")
 const MAT_GLOW := preload("res://assets/materials/lantern_glow.tres")
 const MAT_RUG := preload("res://assets/materials/rug.tres")
 const SIGN_FONT := preload("res://assets/fonts/Alegreya.ttf")
-const INK := Color(0.2, 0.12, 0.07)
+const INK := Color(0.12, 0.065, 0.03)
 
 @onready var spawn_points_node: Node3D = $SpawnPoints
 @onready var items_container: Node3D = $Items
@@ -72,13 +77,11 @@ func _spawn_shelf_slots() -> void:
 	var categories := ItemCatalog.get_categories()
 	var levels := int(ceil(float(SLOTS_PER_CATEGORY) / SLOTS_PER_ROW))
 	var unit_width := SLOTS_PER_ROW * SLOT_SPACING
-	var cat_x_stride := unit_width + SHELF_CATEGORY_GAP
-	var cat_x_start := -(categories.size() - 1) / 2.0 * cat_x_stride
-	var slot_z := SHELF_FRONT_Z - SHELF_DEPTH / 2.0
+	var placements := _shelf_unit_transforms(categories.size(), unit_width + 0.12)
 	for cat_index in categories.size():
 		var cat := categories[cat_index]
-		var cat_center_x := cat_x_start + cat_index * cat_x_stride
-		_build_shelf_unit(cat, Vector3(cat_center_x, 0, slot_z), unit_width, levels)
+		var unit_xform: Transform3D = placements[cat_index]
+		_build_shelf_unit(cat, unit_xform, unit_width, levels)
 		for col in SLOTS_PER_CATEGORY:
 			var slot: Area3D = SLOT_SCENE.instantiate()
 			slot.name = "Slot_%s_%d" % [cat.id, col]
@@ -87,20 +90,50 @@ func _spawn_shelf_slots() -> void:
 			shelf_slots_node.add_child(slot)
 			var level := col / SLOTS_PER_ROW
 			var col_in_row := col % SLOTS_PER_ROW
-			var x := cat_center_x + (col_in_row - (SLOTS_PER_ROW - 1) / 2.0) * SLOT_SPACING
+			# Local to the unit: x across, y up, the unit faces its local +z.
 			# Slot origin = top surface of its shelf board (see ShelfSlot.gd).
-			slot.position = Vector3(x, FIRST_LEVEL_Y + level * LEVEL_HEIGHT, slot_z)
+			var local := Vector3((col_in_row - (SLOTS_PER_ROW - 1) / 2.0) * SLOT_SPACING,
+				FIRST_LEVEL_Y + level * LEVEL_HEIGHT, 0)
+			slot.global_transform = unit_xform * Transform3D(Basis(), local)
+
+
+## Where each shelf unit stands: its footprint centre on the floor, facing
+## into the room (local +z). Units line the back wall first, centred; any
+## that don't fit continue onto the side walls, alternating left/right.
+## Pure maths on constants, so every peer computes identical transforms.
+func _shelf_unit_transforms(count: int, unit_width: float) -> Array[Transform3D]:
+	var result: Array[Transform3D] = []
+	var usable := 2.0 * (ROOM_HALF_WIDTH - WALL_MARGIN)
+	var on_back := count
+	var gap := SHELF_CATEGORY_GAP
+	if count > 1:
+		gap = minf(SHELF_CATEGORY_GAP, (usable - count * unit_width) / (count - 1))
+	if gap < MIN_UNIT_GAP:
+		on_back = maxi(1, int(floor((usable + MIN_UNIT_GAP) / (unit_width + MIN_UNIT_GAP))))
+		gap = minf(SHELF_CATEGORY_GAP, (usable - on_back * unit_width) / maxf(on_back - 1, 1))
+	var stride := unit_width + gap
+	var z := SHELF_FRONT_Z - SHELF_DEPTH / 2.0
+	for i in on_back:
+		var x := (i - (on_back - 1) / 2.0) * stride
+		result.append(Transform3D(Basis(), Vector3(x, 0, z)))
+	var side_x := ROOM_HALF_WIDTH - 0.2 - SHELF_DEPTH / 2.0
+	for i in count - on_back:
+		var left := i % 2 == 0
+		var zc := SIDE_WALL_Z_START + (i / 2) * (unit_width + SHELF_CATEGORY_GAP) + unit_width / 2.0
+		var basis := Basis(Vector3.UP, PI / 2.0 if left else -PI / 2.0)  # face into the room
+		result.append(Transform3D(basis, Vector3(-side_x if left else side_x, 0, zc)))
+	return result
 
 
 ## Builds one bookshelf unit's furniture around `center` (its footprint
 ## centre on the floor). Pure visuals + one player-blocking collider; the
 ## ShelfSlots themselves are added separately. Deterministic, so every
 ## peer builds the same thing without any networking.
-func _build_shelf_unit(cat, center: Vector3, inner_width: float, levels: int) -> void:
+func _build_shelf_unit(cat, xform: Transform3D, inner_width: float, levels: int) -> void:
 	var unit := Node3D.new()
 	unit.name = "Shelf_%s" % cat.id
 	$Furniture.add_child(unit)
-	unit.position = center
+	unit.transform = xform
 	var d := SHELF_DEPTH
 	var w := inner_width + 0.12
 	var top_y := FIRST_LEVEL_Y + levels * LEVEL_HEIGHT
@@ -120,27 +153,30 @@ func _build_shelf_unit(cat, center: Vector3, inner_width: float, levels: int) ->
 	var sign_y := top_y + 0.42
 	_box(unit, Vector3(2.5, 0.66, 0.05), Vector3(0, sign_y, d / 2.0 - 0.06), MAT_SHELF)
 	_box(unit, Vector3(2.36, 0.54, 0.02), Vector3(0, sign_y, d / 2.0 - 0.025), MAT_PARCHMENT)
-	var title := _sign_label(cat.display_name, 150)
+	var title := _sign_label(cat.display_name, 170)
 	title.position = Vector3(0, sign_y + 0.07, d / 2.0 - 0.012)
 	unit.add_child(title)
 	var rule := _sign_label(cat.sign_text, 64)
 	rule.position = Vector3(0, sign_y - 0.16, d / 2.0 - 0.012)
 	unit.add_child(rule)
-	# a small glowing gem of the category colour on each side of the title
-	var gem_mat := StandardMaterial3D.new()
-	gem_mat.albedo_color = cat.color
-	gem_mat.emission_enabled = true
-	gem_mat.emission = cat.color
-	gem_mat.emission_energy_multiplier = 0.8
-	for side in [-1, 1]:
-		var gem := MeshInstance3D.new()
-		var gem_mesh := SphereMesh.new()
-		gem_mesh.radius = 0.05
-		gem_mesh.height = 0.1
-		gem.mesh = gem_mesh
-		gem.material_override = gem_mat
-		gem.position = Vector3(side * 0.98, sign_y + 0.07, d / 2.0)
-		unit.add_child(gem)
+	# Brass statuettes of every shape this type comes in, standing on the
+	# sign — a shape clue that doesn't use colour. (Crystals show both an
+	# orb and a cluster: same type, different shapes.)
+	var n: int = cat.variants.size()
+	for vi in n:
+		var statue: Node3D = load(cat.variants[vi].model_path).instantiate()
+		for mi in statue.find_children("*", "MeshInstance3D"):
+			(mi as MeshInstance3D).material_override = MAT_BRASS
+		statue.scale = Vector3.ONE * 1.9
+		var sx := (vi - (n - 1) / 2.0) * 0.6
+		statue.position = Vector3(sx, sign_y + 0.33, d / 2.0 - 0.06)
+		# Flat things (keys, tomes, scrolls) would lie invisibly on top of
+		# the sign, so stand them up, tipped toward the viewer.
+		var vsize: Vector3 = cat.variants[vi].size
+		if vsize.y < 0.12:
+			statue.rotation.x = deg_to_rad(75)
+			statue.position.y += vsize.z / 2.0 * statue.scale.y
+		unit.add_child(statue)
 
 	# Sconces: brass cap + glowing bulb either side of the sign, with one
 	# warm light in front of the unit so the shelves are pools of light.
@@ -163,7 +199,8 @@ func _build_shelf_unit(cat, center: Vector3, inner_width: float, levels: int) ->
 	# No shadows: the unit's own top board would shade its upper shelves.
 	# SSAO in the environment gives the shelves their depth instead.
 	light.shadow_enabled = false
-	light.position = Vector3(0, top_y + 0.2, d / 2.0 + 1.1)
+	# Low and forward: lights the shelves without blowing out the sign.
+	light.position = Vector3(0, top_y - 0.2, d / 2.0 + 1.5)
 	unit.add_child(light)
 
 	# Rug runner in front of the unit.
@@ -257,7 +294,10 @@ func _sign_label(text: String, size: int) -> Label3D:
 	l.font_size = size
 	l.pixel_size = 0.002
 	l.modulate = INK
-	l.outline_size = 0
+	# A thin outline in the ink colour gives the letters weight, so the
+	# glow from the lit parchment doesn't wash them out.
+	l.outline_size = 3
+	l.outline_modulate = INK
 	l.shaded = false
 	return l
 
@@ -274,13 +314,14 @@ func _spawn_items() -> Array[Dictionary]:
 		item.category = data["category"]
 		item.display_name = data["name"]
 		item.description = data["description"]
+		# Before add_child: _ready builds the visual from these.
+		item.variant = data.get("variant", 0)
+		item.look_seed = randi()
 		items_container.add_child(item, true)
-		# scatter across the open half of the room (positive Z), away from
-		# the shelf wall which now sits around z ≈ -6 to -13; replace with
-		# real scatter points once the level art exists
-		# Set straight on the floor (pivots are at the base), never
-		# overlapping another item: overlapping bodies push each other
-		# forever, never sleep, and cost network traffic every frame.
+		# Scatter across the open half of the room, straight on the floor
+		# (pivots are at the base), never overlapping another item:
+		# overlapping bodies push each other forever, never sleep, and cost
+		# network traffic every frame.
 		item.global_position = _free_scatter_point(used_points)
 		used_points.append(item.global_position)
 		# random facing so the floor looks like a real mess, not a grid

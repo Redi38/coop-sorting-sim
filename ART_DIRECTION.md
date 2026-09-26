@@ -67,13 +67,17 @@ Everything here is designed to be swapped without code changes:
   model scene. Keep the pivot at the base, name tintable meshes `Tint…`,
   and update the collision `size` for that type in `data/item_catalog.gd`.
 - **New item type**: add a `Category` in `data/item_catalog.gd` with its
-  model path, collision size and one-line shelf rule. The shelf unit and
-  its sign are built automatically.
+  shape variants (model path + collision size), its one-line shelf rule,
+  and a name pool. The shelf unit, its sign and statuettes are built
+  automatically, and units wrap onto the side walls when the back wall is
+  full.
+- **Colour**: item tints come from `ItemCatalog.TINT_PALETTE`, shared by
+  every type. Never give a type its own colour: colour must not be a clue.
 
 ## Next art steps
 
-- Distinct model families per type for step 2 (Scrolls, Crystals, Keys,
-  Candles…), with 2–3 variants each so the floor looks varied.
+- More shape variants per type (currently 8 shapes across 6 types) so the
+  floor looks varied; hand-made models to replace the primitive ones.
 - Windows with moonlight, bookstacks and props so the room feels lived-in.
 - The room reacting to progress (DESIGN.md "Feel"): clutter fading and
   light warming as shelves fill.

@@ -90,9 +90,7 @@ func _physics_process(delta: float) -> void:
 func _update_hover() -> void:
 	var target: Node = null
 	if interact_ray.is_colliding():
-		var c := interact_ray.get_collider()
-		if c and c.is_in_group("item"):
-			target = c
+		target = _item_from_collider(interact_ray.get_collider())
 	if target == _hovered_item:
 		return
 	if is_instance_valid(_hovered_item):
@@ -100,6 +98,19 @@ func _update_hover() -> void:
 	_hovered_item = target
 	if _hovered_item:
 		_hovered_item.set_label_visible(true)
+
+
+## The crosshair usually hits an item's padded aim box (an Area3D child of
+## the item), not the item body itself; either way, return the item.
+func _item_from_collider(c: Object) -> Node:
+	if c == null:
+		return null
+	if c.is_in_group("item"):
+		return c
+	var parent: Node = (c as Node).get_parent() if c is Node else null
+	if parent and parent.is_in_group("item"):
+		return parent
+	return null
 
 
 func _apply_cosmetics(is_local: bool) -> void:
@@ -130,8 +141,9 @@ func _try_interact() -> void:
 	if target == null:
 		return
 
-	if target.is_in_group("item"):
-		_try_pickup(target)
+	var item := _item_from_collider(target)
+	if item:
+		_try_pickup(item)
 	elif target.is_in_group("shelf_slot"):
 		_try_place(target)
 

@@ -34,6 +34,12 @@ properties/7/replication_mode = 0
 properties/8/path = NodePath(".:description")
 properties/8/spawn = true
 properties/8/replication_mode = 0
+properties/9/path = NodePath(".:variant")
+properties/9/spawn = true
+properties/9/replication_mode = 0
+properties/10/path = NodePath(".:look_seed")
+properties/10/spawn = true
+properties/10/replication_mode = 0
 
 [node name="Item" type="RigidBody3D"]
 script = ExtResource("1")
@@ -47,6 +53,11 @@ correct_slot_id = ""
 shape = SubResource("BoxShape3D_1")
 
 [node name="Visual" type="Node3D" parent="."]
+
+[node name="Hitbox" type="Area3D" parent="."]
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hitbox"]
 
 [node name="Label3D" type="Label3D" parent="."]
 visible = false

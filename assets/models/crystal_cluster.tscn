@@ -1,0 +1,93 @@
+[gd_scene format=3]
+
+[sub_resource type="StandardMaterial3D" id="crystal"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.15
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 0.55
+rim_enabled = true
+
+[sub_resource type="StandardMaterial3D" id="rock"]
+albedo_color = Color(0.42, 0.37, 0.33, 1)
+roughness = 1.0
+
+[sub_resource type="SphereMesh" id="stone"]
+radius = 0.09
+height = 0.07
+radial_segments = 8
+rings = 3
+
+[sub_resource type="CylinderMesh" id="prism"]
+top_radius = 0.026
+bottom_radius = 0.03
+height = 0.13
+radial_segments = 6
+rings = 1
+
+[sub_resource type="CylinderMesh" id="tip"]
+top_radius = 0.0
+bottom_radius = 0.026
+height = 0.05
+radial_segments = 6
+rings = 1
+
+[sub_resource type="CylinderMesh" id="prism_small"]
+top_radius = 0.018
+bottom_radius = 0.022
+height = 0.08
+radial_segments = 6
+rings = 1
+
+[sub_resource type="CylinderMesh" id="tip_small"]
+top_radius = 0.0
+bottom_radius = 0.018
+height = 0.035
+radial_segments = 6
+rings = 1
+
+[node name="CrystalCluster" type="Node3D"]
+
+[node name="Stone" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.025, 0)
+mesh = SubResource("stone")
+surface_material_override/0 = SubResource("rock")
+
+[node name="Main" type="Node3D" parent="."]
+transform = Transform3D(0.985, -0.174, 0, 0.174, 0.985, 0, 0, 0, 1, 0, 0.04, 0)
+
+[node name="TintPrism" type="MeshInstance3D" parent="Main"]
+position = Vector3(0, 0.065, 0)
+mesh = SubResource("prism")
+surface_material_override/0 = SubResource("crystal")
+
+[node name="TintTip" type="MeshInstance3D" parent="Main"]
+position = Vector3(0, 0.155, 0)
+mesh = SubResource("tip")
+surface_material_override/0 = SubResource("crystal")
+
+[node name="Left" type="Node3D" parent="."]
+transform = Transform3D(0.766, 0.643, 0, -0.643, 0.766, 0, 0, 0, 1, -0.045, 0.035, 0.015)
+
+[node name="TintPrism" type="MeshInstance3D" parent="Left"]
+position = Vector3(0, 0.04, 0)
+mesh = SubResource("prism_small")
+surface_material_override/0 = SubResource("crystal")
+
+[node name="TintTip" type="MeshInstance3D" parent="Left"]
+position = Vector3(0, 0.097, 0)
+mesh = SubResource("tip_small")
+surface_material_override/0 = SubResource("crystal")
+
+[node name="Right" type="Node3D" parent="."]
+transform = Transform3D(0.866, -0.4, 0.3, 0.5, 0.69, -0.52, 0, 0.6, 0.8, 0.05, 0.035, -0.02)
+
+[node name="TintPrism" type="MeshInstance3D" parent="Right"]
+position = Vector3(0, 0.04, 0)
+mesh = SubResource("prism_small")
+surface_material_override/0 = SubResource("crystal")
+
+[node name="TintTip" type="MeshInstance3D" parent="Right"]
+position = Vector3(0, 0.097, 0)
+mesh = SubResource("tip_small")
+surface_material_override/0 = SubResource("crystal")

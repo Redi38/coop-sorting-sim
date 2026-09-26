@@ -12,6 +12,8 @@ extends RigidBody3D
 @export var category: String = ""          # e.g. "potion", "tome", "artifact"
 @export var display_name: String = ""
 @export var description: String = ""       # the textual clue players read
+var variant: int = 0      # which of the category's shapes (ItemCatalog.Variant)
+var look_seed: int = 0    # tint + size, derived identically on every peer
 @export var correct_slot_id: String = ""
 
 var held_by_peer: int = 0                   # 0 = not held
@@ -20,6 +22,7 @@ var current_slot: Node = null               # the ShelfSlot this item is sitting
 var _held_player_node: CoopPlayer = null
 
 @onready var visual: Node3D = $Visual
+@onready var hitbox_shape: CollisionShape3D = $Hitbox/CollisionShape3D
 @onready var collision: CollisionShape3D = $CollisionShape3D
 @onready var label: Label3D = $Label3D
 
@@ -45,29 +48,43 @@ func _ready() -> void:
 
 
 func _refresh_clue_display() -> void:
-	# The item's look comes from its category's model scene. Any mesh in it
-	# named "Tint..." takes the category color, so the model file itself
-	# stays neutral and reusable. (Per DESIGN.md, color stops being *the*
-	# clue in step 2 — shape, name and description will carry it.)
-	var cat := ItemCatalog.get_category(category)
-	if cat and visual and visual.get_child_count() == 0:
-		var model: Node3D = load(cat.model_path).instantiate()
+	# Shape comes from the item's variant; tint and size from its look_seed.
+	# Colour is decoration only (DESIGN.md): the tint is drawn from one
+	# palette shared by every type. Meshes named "Tint..." take the tint.
+	var v: ItemCatalog.Variant = ItemCatalog.get_variant(category, variant)
+	if v and visual and visual.get_child_count() == 0:
+		var look := ItemCatalog.look_for_seed(look_seed)
+		var tint: Color = look["tint"]
+		var s: float = look["scale"]
+		var model: Node3D = load(v.model_path).instantiate()
 		visual.add_child(model)
+		visual.scale = Vector3.ONE * s
 		for node in model.find_children("Tint*", "MeshInstance3D"):
 			var mi := node as MeshInstance3D
 			var mat := (mi.get_active_material(0) as StandardMaterial3D).duplicate() as StandardMaterial3D
-			mat.albedo_color = cat.color
+			mat.albedo_color = tint
 			if mat.emission_enabled:
-				mat.emission = cat.color
+				mat.emission = tint
 			mi.set_surface_override_material(0, mat)
-		# Each item gets its own shape (the scene's BoxShape3D is shared by
-		# every instance), sized to the model and resting on its base.
+		# Physics box: sized to this model, resting on its base. Each item
+		# gets its own shape (the scene's BoxShape3D is shared by all).
+		var size: Vector3 = v.size * s
 		var shape := BoxShape3D.new()
-		shape.size = cat.size
+		shape.size = size
 		collision.shape = shape
-		collision.position = Vector3(0, cat.size.y / 2.0, 0)
+		collision.position = Vector3(0, size.y / 2.0, 0)
+		# Aim box: a little bigger than the model, so thin things (keys,
+		# scrolls) are easy to target — but never wider than a shelf slot.
+		var aim := Vector3(
+			clampf(size.x + 0.1, 0.16, 0.4),
+			maxf(size.y + 0.06, 0.14),
+			clampf(size.z + 0.1, 0.16, 0.4))
+		var aim_shape := BoxShape3D.new()
+		aim_shape.size = aim
+		hitbox_shape.shape = aim_shape
+		hitbox_shape.position = Vector3(0, aim.y / 2.0, 0)
 		if label:
-			label.position = Vector3(0, cat.size.y + 0.14, 0)
+			label.position = Vector3(0, size.y + 0.14, 0)
 	if label:
 		var name_line := display_name if display_name != "" else item_id
 		label.text = name_line + ("\n" + description if description != "" else "")
@@ -90,6 +107,10 @@ func _set(property: StringName, value) -> bool:
 
 
 func _physics_process(_delta: float) -> void:
+	# The aim box follows the physics box: off while carried, so your own
+	# held item never blocks the crosshair.
+	if hitbox_shape.disabled != collision.disabled:
+		hitbox_shape.disabled = collision.disabled
 	# Host drags a held item to its holder's hand each frame; the
 	# MultiplayerSynchronizer below pushes the resulting position to
 	# everyone else. Clients never move a held item themselves.

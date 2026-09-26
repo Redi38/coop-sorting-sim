@@ -43,15 +43,17 @@ func _refresh() -> void:
 	progress_label.text = "Sorted %d / %d    Mistakes %d" % [gs.sorted, gs.total, gs.mistakes]
 	progress_bar.value = (float(gs.sorted) / gs.total) if gs.total > 0 else 0.0
 
-	# Per-category counts, each in its category's own color — the same
-	# visual clue the items and shelf pads use.
+	# Per-type counts. Neutral text on purpose: colour is never a type
+	# clue (DESIGN.md). A finished type is shown in gold with a tick.
 	var parts: PackedStringArray = []
 	for cat in ItemCatalog.get_categories():
 		if not gs.per_category.has(cat.id):
 			continue
 		var c: Dictionary = gs.per_category[cat.id]
-		parts.append("[color=#%s]%s %d/%d[/color]" % [
-			cat.color.to_html(false), cat.display_name, c["sorted"], c["total"]])
+		if c["total"] > 0 and c["sorted"] >= c["total"]:
+			parts.append("[color=#e9c46a]%s ✓[/color]" % cat.display_name)
+		else:
+			parts.append("%s %d/%d" % [cat.display_name, c["sorted"], c["total"]])
 	var hint := "" if gs.running or gs.finished or gs.sorted > 0 else "    [i]Pick up an item to start the clock[/i]"
 	category_label.text = "[center]%s%s[/center]" % ["    ".join(parts), hint]
 
