@@ -221,11 +221,21 @@ static func get_item_templates(count: int) -> Array[Dictionary]:
 	var per_category := int(ceil(float(count) / _categories.size()))
 	for category in _categories:
 		var pool: Dictionary = _pools[category.id]
-		var combos: Array = []
+		# Deal combos round-robin across nouns (each noun's qualifiers
+		# shuffled, noun order shuffled) so even a small solo archive gets
+		# every noun — and therefore every shape — of each type.
+		var by_noun: Array = []
 		for noun in pool["nouns"]:
+			var group: Array = []
 			for qual in pool["qualifiers"]:
-				combos.append([noun, qual])
-		combos.shuffle()
+				group.append([noun, qual])
+			group.shuffle()
+			by_noun.append(group)
+		by_noun.shuffle()
+		var combos: Array = []
+		for k in pool["qualifiers"].size():
+			for group in by_noun:
+				combos.append(group[k])
 		for i in per_category:
 			if result.size() >= count:
 				break

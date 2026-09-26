@@ -42,6 +42,7 @@ properties/10/spawn = true
 properties/10/replication_mode = 0
 
 [node name="Item" type="RigidBody3D"]
+collision_mask = 3
 script = ExtResource("1")
 item_id = ""
 category = ""

@@ -96,6 +96,8 @@ func _on_peer_disconnected(id: int) -> void:
 	players.erase(id)
 	_register_players_on_all.rpc(players)
 	_despawn_player_on_all.rpc(id)
+	if world:
+		world.host_on_crew_changed()  # shrink back if the round hadn't started
 
 
 func _on_connected_to_server() -> void:
@@ -141,6 +143,10 @@ func _client_world_ready(display_name: String) -> void:
 	# The new player, for everyone (peers still loading skip it and get it
 	# from the loop above once they're ready themselves).
 	_spawn_player_on_all.rpc(sender_id, _next_spawn_position())
+	# Resize the archive for the bigger crew if the round hasn't started —
+	# before the visibility pass below, so the new peer only ever receives
+	# the resized item set.
+	world.host_on_crew_changed()
 	# Items: their synchronizers filter on is_peer_ready, so flip them now.
 	for item in get_tree().get_nodes_in_group("item"):
 		var sync := item.get_node_or_null("MultiplayerSynchronizer") as MultiplayerSynchronizer

@@ -24,6 +24,7 @@ assets/fonts/                 # Alegreya (signs/labels) + Nunito (UI), OFL
 assets/ui/cozy_theme.tres     # Project-wide UI theme
 tools/gen_textures.py         # Procedural texture generator
 tests/TestAim.gd              # Headless test: aim + interact for every type/shape (see file header)
+tests/TestCoop.gd             # Headless 2-player test: scaling, pings, toss, crew list (see file header)
 scenes/main_menu/            # Host/Join screen
 scenes/world/                # The room: floor, spawn points, shelf slot grid, item spawner,
 							  # GameState (host-authoritative round state + timer)
@@ -38,7 +39,8 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 1. Open the folder as a Godot 4.3+ project.
 2. **Input Map** is already defined in `project.godot`: WASD to move,
    Space to jump, E to interact (pick up / place), Q to drop the last
-   item you picked up, Esc to toggle mouse capture.
+   item you picked up, right-click or T to toss it, G or middle-click to
+   ping, Esc to toggle mouse capture. A hint bar in the HUD lists these.
 3. Open each `.tscn` once in the editor and let Godot re-save it — these
    were hand-written as text, so node references (`@onready` paths, unique
    names like `%HostButton`) should resolve, but double-check the Inspector
@@ -132,6 +134,29 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 - **Late joiners** pull a GameState snapshot on join, the same way they
   pull slot state, so they see the correct progress, timer, and (if the
   round is already over) the win screen.
+
+## Co-op (step 3)
+
+Parallel sorting (DESIGN.md): nothing *requires* teamwork; these make it
+nicer to play together.
+
+- **Archive scales with the crew:** 60 items solo, +40 per extra player,
+  up to shelf capacity (180 with four). `World.item_count_for()`.
+  Friends who finish joining *before the first pickup* resize the archive
+  (and leaving before then shrinks it back); once anyone has picked
+  something up, the size is locked for that round. "Play again" sizes the
+  next round for whoever is present.
+- **Pings (G / middle-click):** ray out to 40 m. On an item: "?" + its
+  name ("where does this go?"). On a shelf or slot: "!" + the type
+  ("over here"). Anywhere else: a plain marker. Drawn through walls, at a
+  constant screen size, in the pinger's robe colour, for 5 s; one live
+  ping per player. Sent only to peers whose World has loaded.
+- **Toss (right-click / T):** throws the last-picked item forward along
+  your view. The host runs the physics, so everyone sees the same arc and
+  landing spot. Items collide with shelf furniture (layer 2), so a toss
+  can't vanish behind a bookcase.
+- **Crew list** (top right, robe-colour swatches) and gentle notices:
+  "Mira joined the archive", "… left", "The archive now holds 100 items".
 
 ## Testing the milestone locally
 

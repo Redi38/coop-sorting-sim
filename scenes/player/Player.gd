@@ -27,6 +27,9 @@ const ROBE_COLORS := [
 
 var held_items: Array[Node] = []
 var _hovered_item: Node = null
+const PING_RANGE := 40.0
+const PING_COOLDOWN := 0.4
+var _last_ping_time := -10.0
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 
@@ -65,6 +68,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed("drop"):
 		_try_drop()
+
+	if event.is_action_pressed("toss"):
+		_try_toss()
+
+	if event.is_action_pressed("ping"):
+		try_ping()
 
 
 func _physics_process(delta: float) -> void:
@@ -163,6 +172,66 @@ func _try_place(slot: Node) -> void:
 		return
 	var item := held_items[-1]
 	slot.request_place.rpc_id(1, item.get_path())
+
+
+func _try_toss() -> void:
+	_prune_freed_items()
+	if held_items.is_empty():
+		return
+	held_items[-1].request_toss.rpc_id(1)
+
+
+## Pings whatever is under the crosshair, out to PING_RANGE (much further
+## than you can reach). Shown to everyone — see World.show_ping.
+func try_ping() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_ping_time < PING_COOLDOWN:
+		return
+	_last_ping_time = now
+	var from := camera.global_position
+	var to := from - camera.global_transform.basis.z * PING_RANGE
+	# layer 1 = world + items (+ their aim boxes), layer 2 = shelf furniture
+	var query := PhysicsRayQueryParameters3D.create(from, to, 1 | 2, [get_rid()])
+	query.collide_with_areas = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var collider: Object = hit["collider"]
+	var pos: Vector3 = hit["position"]
+	var kind := "spot"
+	var caption := ""
+	var item := _item_from_collider(collider)
+	if item:
+		kind = "item"
+		caption = item.display_name
+		pos = item.global_position + Vector3(0, 0.5, 0)
+	else:
+		var cat_id := ""
+		if collider.is_in_group("shelf_slot"):
+			cat_id = collider.accepted_category
+		elif collider is Node and (collider as Node).get_parent() and str((collider as Node).get_parent().name).begins_with("Shelf_"):
+			cat_id = str((collider as Node).get_parent().name).trim_prefix("Shelf_")
+		if cat_id != "":
+			kind = "shelf"
+			var cat := ItemCatalog.get_category(cat_id)
+			caption = cat.display_name if cat else cat_id
+			pos += Vector3(0, 0.35, 0)
+		else:
+			pos += Vector3(0, 0.25, 0)
+	# Only to peers whose World has loaded (NetworkManager.players is the
+	# ready-list), so nobody gets an RPC for a node they don't have yet.
+	var me := multiplayer.get_unique_id()
+	for peer_id in NetworkManager.players:
+		if peer_id != me:
+			_show_ping.rpc_id(peer_id, kind, pos, caption)
+	_show_ping(kind, pos, caption)
+
+
+@rpc("authority", "reliable")
+func _show_ping(kind: String, pos: Vector3, caption: String) -> void:
+	var world := NetworkManager.world
+	if world and world.has_method("show_ping"):
+		world.show_ping(get_multiplayer_authority(), kind, pos, caption)
 
 
 func _try_drop() -> void:

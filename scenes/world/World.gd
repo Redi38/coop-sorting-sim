@@ -13,7 +13,12 @@ const SLOT_SCENE := preload("res://scenes/shelf_slot/ShelfSlot.tscn")
 # Raised toward the design doc's 150-300 target now that the room is sized
 # to fit it (50x50 floor, see World.tscn). ItemCatalog's get_item_templates()
 # cycles its hand-authored pool with numbered repeats to reach this count.
-const TARGET_ITEM_COUNT := 180
+const TARGET_ITEM_COUNT := 180    # shelf capacity (the 4-player archive)
+# The archive scales with the crew so solo isn't a slog and four players
+# aren't done in minutes: 60 solo, +40 per extra player, capped at shelf
+# capacity. Friends who join before the first pickup grow the archive.
+const BASE_ITEMS := 60
+const ITEMS_PER_EXTRA_PLAYER := 40
 # One slot per item within a category (items are 60/category at the count
 # above: 180 / 3 categories), since each item needs its own lockable slot.
 # Every type gets the same number of slots (180 / 6 = 30).
@@ -40,6 +45,7 @@ const MAT_GLOW := preload("res://assets/materials/lantern_glow.tres")
 const MAT_RUG := preload("res://assets/materials/rug.tres")
 const SIGN_FONT := preload("res://assets/fonts/Alegreya.ttf")
 const INK := Color(0.12, 0.065, 0.03)
+const CoopPlayerScript := preload("res://scenes/player/Player.gd")
 
 @onready var spawn_points_node: Node3D = $SpawnPoints
 @onready var items_container: Node3D = $Items
@@ -305,7 +311,7 @@ func _sign_label(text: String, size: int) -> Label3D:
 ## Spawns the round's items and returns their templates (GameState uses
 ## them to know totals per category).
 func _spawn_items() -> Array[Dictionary]:
-	var templates := ItemCatalog.get_item_templates(TARGET_ITEM_COUNT)
+	var templates := ItemCatalog.get_item_templates(item_count_for(maxi(1, NetworkManager.players.size())))
 	var used_points: Array[Vector3] = []
 	for data in templates:
 		var item: CoopItem = ITEM_SCENE.instantiate() as CoopItem
@@ -356,7 +362,28 @@ func _receive_slot_states(states: Array) -> void:
 # Round restart — host only, in place (nobody reconnects or reloads scenes)
 # ---------------------------------------------------------------------------
 
-func host_restart_round() -> void:
+static func item_count_for(player_count: int) -> int:
+	return mini(TARGET_ITEM_COUNT, BASE_ITEMS + ITEMS_PER_EXTRA_PLAYER * maxi(player_count - 1, 0))
+
+
+## True until the round's first pickup (or placement) — while it's true the
+## archive can still be resized for the crew without anyone losing work.
+func round_not_started() -> bool:
+	return not game_state.running and not game_state.finished \
+		and game_state.sorted == 0 and game_state.mistakes == 0
+
+
+## Host: called by NetworkManager whenever someone finishes joining or
+## leaves. Resizes the archive for the new crew size if the round hasn't
+## started yet; once anyone has picked something up, the size is locked in.
+func host_on_crew_changed() -> void:
+	if not multiplayer.is_server() or not round_not_started():
+		return
+	if item_count_for(maxi(1, NetworkManager.players.size())) != game_state.total:
+		host_restart_round(false)  # nobody has done anything yet: no teleport
+
+
+func host_restart_round(teleport_players := true) -> void:
 	if not multiplayer.is_server():
 		return
 	# Despawn every item. remove_child (not just queue_free) takes the node
@@ -370,6 +397,8 @@ func host_restart_round() -> void:
 	# new round's state lands, so nobody's HUD briefly says "Carrying 3/3".
 	game_state.notify_round_reset.rpc()
 	game_state.host_setup(_spawn_items())
+	if not teleport_players:
+		return
 	# Players own their own transform, so ask each one to move itself.
 	var i := 0
 	for player in players_container.get_children():
@@ -382,3 +411,70 @@ func host_restart_round() -> void:
 func _reset_slots() -> void:
 	for slot in shelf_slots_node.get_children():
 		slot.apply_state(false, false, false)
+
+
+# ---------------------------------------------------------------------------
+# Pings — shown locally on every peer; Player.gd does the networking
+# ---------------------------------------------------------------------------
+
+const PING_LIFETIME := 5.0
+const PING_FONT := preload("res://assets/fonts/Nunito.ttf")
+var _pings: Dictionary = {}  # peer_id -> Label3D (one live ping per player)
+
+
+## kind: "item" ("?" — where does this go?), "shelf" ("!" — over here) or
+## "spot" (just "look here"). Drawn through walls and at a constant screen
+## size, in the pinging player's robe colour.
+func show_ping(peer_id: int, kind: String, pos: Vector3, caption: String) -> void:
+	if _pings.has(peer_id) and is_instance_valid(_pings[peer_id]):
+		_pings[peer_id].queue_free()
+	var who: String = NetworkManager.players.get(peer_id, {}).get("name", "Player")
+	var symbol: String = {"item": "?", "shelf": "!"}.get(kind, "•")
+	var color: Color = CoopPlayerScript.ROBE_COLORS[peer_id % CoopPlayerScript.ROBE_COLORS.size()]
+	# Big symbol (what kind of ping) + smaller caption (who / what) just
+	# under it. Both are fixed-size, and the caption is placed with a
+	# *pixel* offset, so the pair stays together at any distance.
+	var l := _ping_label(symbol, 110, color)
+	l.name = "Ping_%d" % peer_id
+	var cap := _ping_label(who + ": " + caption if caption != "" else who, 40, color)
+	cap.name = "Caption"
+	cap.offset = Vector2(0, -62)
+	l.add_child(cap)
+	l.set_meta("kind", kind)
+	l.set_meta("caption", caption)
+	var container := get_node_or_null("Pings")
+	if container == null:
+		container = Node3D.new()
+		container.name = "Pings"
+		add_child(container)
+	container.add_child(l)
+	l.global_position = pos
+	_pings[peer_id] = l
+	# gentle bob, then fade out
+	var tw := l.create_tween()
+	tw.tween_property(l, "position:y", pos.y + 0.12, 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(l, "position:y", pos.y, 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_interval(PING_LIFETIME - 1.7)
+	# first fade runs after the interval; the rest run alongside it
+	tw.tween_property(l, "modulate:a", 0.0, 1.0)
+	tw.parallel().tween_property(l, "outline_modulate:a", 0.0, 1.0)
+	tw.parallel().tween_property(cap, "modulate:a", 0.0, 1.0)
+	tw.parallel().tween_property(cap, "outline_modulate:a", 0.0, 1.0)
+	tw.tween_callback(l.queue_free)
+
+
+func _ping_label(text: String, size: int, color: Color) -> Label3D:
+	var l := Label3D.new()
+	l.text = text
+	l.font = PING_FONT
+	l.font_size = size
+	l.outline_size = 14 if size < 80 else 22
+	l.pixel_size = 0.0009
+	l.fixed_size = true
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.render_priority = 10
+	l.outline_render_priority = 9
+	l.modulate = color.lightened(0.3)
+	l.outline_modulate = color.darkened(0.65)
+	return l

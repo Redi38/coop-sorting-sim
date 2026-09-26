@@ -174,6 +174,28 @@ func request_drop() -> void:
 	_host_release_to_world()
 
 
+const TOSS_SPEED := 6.5
+const TOSS_LIFT := 2.2
+
+## Toss the item forward from the holder's view. The host runs the throw's
+## physics like any other item; clients just see the synced flight.
+@rpc("any_peer", "reliable", "call_local")
+func request_toss() -> void:
+	if not multiplayer.is_server():
+		return
+	var tosser := multiplayer.get_remote_sender_id()
+	if held_by_peer != tosser:
+		return
+	var player := _find_player(tosser)
+	var forward := -global_transform.basis.z
+	if player:
+		forward = -player.camera.global_transform.basis.z
+	_notify_player.rpc_id(tosser, false)
+	_host_release_to_world()
+	linear_velocity = forward * TOSS_SPEED + Vector3.UP * TOSS_LIFT
+	angular_velocity = Vector3(randf_range(-4, 4), randf_range(-4, 4), randf_range(-4, 4))
+
+
 ## Host-only. Called by NetworkManager when the holder disconnects, so their
 ## items fall to the floor instead of floating frozen with a dead
 ## held_by_peer that nobody can ever clear. No _notify_player here: the

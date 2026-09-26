@@ -92,6 +92,11 @@ talking. Co-op features are optional conveniences:
   just data now — a pool entry pointing at another type's model — ready
   for later archives.
 
+**Step 3 (co-op, parallel) — done.** The archive scales with the crew
+(60 solo, +40 per extra player, sized before the first pickup), pings for
+"where does this go?" / "over here", tossing items to friends, a crew list
+and join/leave notices. None of it is required to finish a round.
+
 ## Out of scope (for now)
 
 Fail states, timers that end the round, competitive modes, asymmetric
