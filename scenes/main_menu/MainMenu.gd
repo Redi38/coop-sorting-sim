@@ -11,6 +11,7 @@ func _ready() -> void:
 	host_button.pressed.connect(_on_host_pressed)
 	join_button.pressed.connect(_on_join_pressed)
 	NetworkManager.connection_failed.connect(_on_connection_failed)
+	Sfx.wire_buttons(self)
 
 
 func _on_host_pressed() -> void:

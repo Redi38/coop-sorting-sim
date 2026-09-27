@@ -69,6 +69,10 @@ func _ready() -> void:
 	# on host and clients alike without needing a MultiplayerSpawner.
 	_spawn_shelf_slots()
 	_build_room_trim()
+	_build_dust()
+	game_state.state_changed.connect(_update_warmth)
+	game_state.category_completed.connect(_on_category_completed)
+	_update_warmth(true)
 
 	if multiplayer.is_server():
 		game_state.host_setup(_spawn_items())
@@ -186,6 +190,10 @@ func _build_shelf_unit(cat, xform: Transform3D, inner_width: float, levels: int)
 
 	# Sconces: brass cap + glowing bulb either side of the sign, with one
 	# warm light in front of the unit so the shelves are pools of light.
+	# Each unit gets its own glow material so it can light up on its own
+	# when its type is complete.
+	var unit_glow := MAT_GLOW.duplicate() as StandardMaterial3D
+	_unit_glow[cat.id] = unit_glow
 	for side in [-1, 1]:
 		var sx: float = side * 1.45
 		_box(unit, Vector3(0.1, 0.05, 0.12), Vector3(sx, sign_y + 0.14, d / 2.0), MAT_BRASS)
@@ -194,7 +202,7 @@ func _build_shelf_unit(cat, xform: Transform3D, inner_width: float, levels: int)
 		sphere.radius = 0.06
 		sphere.height = 0.12
 		bulb.mesh = sphere
-		bulb.material_override = MAT_GLOW
+		bulb.material_override = unit_glow
 		bulb.position = Vector3(sx, sign_y + 0.07, d / 2.0 + 0.02)
 		unit.add_child(bulb)
 	var light := OmniLight3D.new()
@@ -208,6 +216,8 @@ func _build_shelf_unit(cat, xform: Transform3D, inner_width: float, levels: int)
 	# Low and forward: lights the shelves without blowing out the sign.
 	light.position = Vector3(0, top_y - 0.2, d / 2.0 + 1.5)
 	unit.add_child(light)
+	_unit_lights[cat.id] = light
+	_unit_centres[cat.id] = unit.to_global(Vector3(0, top_y * 0.6, d / 2.0))
 
 	# Rug runner in front of the unit.
 	_box(unit, Vector3(w, 0.012, 1.7), Vector3(0, 0.006, d / 2.0 + 1.0), MAT_RUG)
@@ -421,6 +431,176 @@ func _reset_slots() -> void:
 # Pings — shown locally on every peer; Player.gd does the networking
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Feel: the room comes back to life as the archive is restored (DESIGN.md
+# "Feel"). Dim and dusty at 0%, warm and clear at 100%. Local visuals on
+# every peer, driven by the synced GameState.
+# ---------------------------------------------------------------------------
+
+const DUSTY := {"ambient": 0.34, "ambient_color": Color(0.8, 0.78, 0.76), "fog": 0.016,
+	"field": 0.8, "sun": 0.55, "shelf": 1.6, "dust": 1.0, "saturation": 0.72}
+const RESTORED := {"ambient": 0.7, "ambient_color": Color(1.0, 0.84, 0.64), "fog": 0.004,
+	"field": 1.8, "sun": 1.0, "shelf": 3.0, "dust": 0.15, "saturation": 1.12}
+const COMPLETE_SHELF_BONUS := 1.0
+
+var _unit_lights: Dictionary = {}    # category_id -> OmniLight3D
+var _unit_glow: Dictionary = {}      # category_id -> StandardMaterial3D (sconce bulbs)
+var _unit_centres: Dictionary = {}   # category_id -> Vector3 (for celebration sparkles)
+var _dust: GPUParticles3D
+var _warmth_tween: Tween
+
+
+func _update_warmth(instant := false) -> void:
+	var p := 0.0
+	if game_state.total > 0:
+		p = clampf(float(game_state.sorted) / game_state.total, 0.0, 1.0)
+	var env: Environment = $WorldEnvironment.environment
+	if _warmth_tween:
+		_warmth_tween.kill()
+	var targets := [
+		[env, "ambient_light_energy", lerpf(DUSTY.ambient, RESTORED.ambient, p)],
+		[env, "ambient_light_color", DUSTY.ambient_color.lerp(RESTORED.ambient_color, p)],
+		[env, "fog_density", lerpf(DUSTY.fog, RESTORED.fog, p)],
+		[$FieldLightA, "light_energy", lerpf(DUSTY.field, RESTORED.field, p)],
+		[$FieldLightB, "light_energy", lerpf(DUSTY.field, RESTORED.field, p)],
+		[$DirectionalLight3D, "light_energy", lerpf(DUSTY.sun, RESTORED.sun, p)],
+		[_dust, "amount_ratio", lerpf(DUSTY.dust, RESTORED.dust, p)],
+		# colour returns to the room as it's restored
+		[env, "adjustment_saturation", lerpf(DUSTY.saturation, RESTORED.saturation, p)],
+	]
+	for cat_id in _unit_lights:
+		var c: Dictionary = game_state.per_category.get(cat_id, {"sorted": 0, "total": 0})
+		var cp: float = float(c["sorted"]) / c["total"] if c["total"] > 0 else 0.0
+		var bonus := COMPLETE_SHELF_BONUS if c["total"] > 0 and c["sorted"] >= c["total"] else 0.0
+		targets.append([_unit_lights[cat_id], "light_energy", lerpf(DUSTY.shelf, RESTORED.shelf, cp) + bonus])
+		targets.append([_unit_glow[cat_id], "emission_energy_multiplier", 3.0 + bonus * 3.0])
+	if instant:
+		for t in targets:
+			t[0].set(t[1], t[2])
+		return
+	_warmth_tween = create_tween().set_parallel(true)
+	for t in targets:
+		_warmth_tween.tween_property(t[0], t[1], t[2], 1.6).set_trans(Tween.TRANS_SINE)
+
+
+func _on_category_completed(cat_id: String) -> void:
+	if _unit_centres.has(cat_id):
+		var c: Vector3 = _unit_centres[cat_id]
+		for i in 5:
+			spawn_sparkles(c + Vector3(randf_range(-2.0, 2.0), randf_range(-0.5, 0.6), 0.2), 18)
+
+
+## Slow floating dust in the air. Thins out as the archive is restored.
+func _build_dust() -> void:
+	_dust = GPUParticles3D.new()
+	_dust.name = "Dust"
+	_dust.amount = 260
+	_dust.lifetime = 16.0
+	_dust.preprocess = 16.0
+	_dust.visibility_aabb = AABB(Vector3(-22, -1, -12), Vector3(44, 7, 36))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(20, 1.8, 14)
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 180.0
+	pm.initial_velocity_min = 0.01
+	pm.initial_velocity_max = 0.06
+	pm.gravity = Vector3(0, -0.004, 0)
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.4
+	pm.turbulence_noise_speed_random = 0.3
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0))
+	fade.set_color(1, Color(1, 1, 1, 0))
+	fade.add_point(0.2, Color(1, 1, 1, 1))
+	fade.add_point(0.8, Color(1, 1, 1, 1))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = fade
+	pm.color_ramp = ramp
+	_dust.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.03, 0.03)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color(1.0, 0.86, 0.62, 0.55)
+	quad.material = mat
+	_dust.draw_pass_1 = quad
+	add_child(_dust)
+	_dust.position = Vector3(0, 2.0, 6.0)
+
+
+## A little burst of golden motes (correct placement, finished type).
+## Local visual only; frees itself.
+func spawn_sparkles(pos: Vector3, count := 14) -> void:
+	var p := GPUParticles3D.new()
+	p.one_shot = true
+	p.explosiveness = 0.9
+	p.amount = count
+	p.lifetime = 1.2
+	p.visibility_aabb = AABB(Vector3(-1.5, -1.5, -1.5), Vector3(3, 3, 3))
+	p.process_material = _sparkle_material()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.075, 0.075)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_texture = _soft_dot()
+	mat.albedo_color = Color(1.0, 0.8, 0.42)   # warm gold (the ramp fades it out)
+	quad.material = mat
+	p.draw_pass_1 = quad
+	p.name = "Sparkles"
+	add_child(p, true)
+	p.global_position = pos
+	p.emitting = true
+	get_tree().create_timer(1.9).timeout.connect(p.queue_free)
+
+
+var _sparkle_pm: ParticleProcessMaterial
+func _sparkle_material() -> ParticleProcessMaterial:
+	if _sparkle_pm:
+		return _sparkle_pm
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 110.0
+	pm.initial_velocity_min = 0.35
+	pm.initial_velocity_max = 0.9
+	pm.damping_min = 0.6
+	pm.damping_max = 1.2
+	pm.gravity = Vector3(0, -0.6, 0)
+	pm.scale_min = 0.6
+	pm.scale_max = 1.2
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 0.93, 0.7, 1))
+	fade.set_color(1, Color(1, 0.75, 0.35, 0))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = fade
+	pm.color_ramp = ramp
+	_sparkle_pm = pm
+	return pm
+
+
+var _dot_tex: ImageTexture
+## A small round, soft-edged dot (so sparkles aren't little squares).
+func _soft_dot() -> ImageTexture:
+	if _dot_tex:
+		return _dot_tex
+	var img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 32:
+			var d := Vector2(x - 15.5, y - 15.5).length() / 15.5
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	_dot_tex = ImageTexture.create_from_image(img)
+	return _dot_tex
+
+
 const PING_LIFETIME := 5.0
 const PING_FONT := preload("res://assets/fonts/Nunito.ttf")
 var _pings: Dictionary = {}  # peer_id -> Label3D (one live ping per player)
@@ -454,6 +634,7 @@ func show_ping(peer_id: int, kind: String, pos: Vector3, caption: String) -> voi
 	container.add_child(l)
 	l.global_position = pos
 	_pings[peer_id] = l
+	Sfx.play("ping", null, -4.0)
 	# gentle bob, then fade out
 	var tw := l.create_tween()
 	tw.tween_property(l, "position:y", pos.y + 0.12, 0.35).set_trans(Tween.TRANS_SINE)

@@ -39,6 +39,8 @@ func _ready() -> void:
 	leave_button.pressed.connect(NetworkManager.leave_game)
 	win_panel.visible = false
 	NetworkManager.player_list_changed.connect(_refresh_crew)
+	_game_state.category_completed.connect(_on_category_completed)
+	Sfx.wire_buttons(self)
 	_refresh_crew()
 	_refresh()
 
@@ -98,10 +100,19 @@ func _show_win_panel() -> void:
 	var is_host := multiplayer.is_server()
 	play_again_button.visible = is_host
 	waiting_label.visible = not is_host
+	if not win_panel.visible:
+		Sfx.play("round_complete")
 	win_panel.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if is_host:
 		play_again_button.grab_focus()
+
+
+func _on_category_completed(cat_id: String) -> void:
+	var cat := ItemCatalog.get_category(cat_id)
+	show_toast("%s complete!" % (cat.display_name if cat else cat_id))
+	if not _game_state.finished:
+		Sfx.play("category_complete")
 
 
 func _hide_win_panel() -> void:

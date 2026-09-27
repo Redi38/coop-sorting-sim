@@ -34,6 +34,10 @@ func _ready() -> void:
 			cam.look_at(aim_at)
 			ray.force_raycast_update()
 			var hover_item = p._item_from_collider(ray.get_collider())
+			if hover_item != it:
+				var c = ray.get_collider()
+				var hit_item = p._item_from_collider(c)
+				print("HOST [INFO] ray hit %s (%s) at %.2f m instead of %s" % [c.get_path() if c else "nothing", hit_item.name if hit_item else "not an item", ray.get_collision_point().distance_to(cam.global_position) if c else 0.0, it.name])
 			p._try_interact()
 			await get_tree().create_timer(0.15).timeout
 			var picked: bool = it.held_by_peer == 1

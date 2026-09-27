@@ -85,15 +85,18 @@ func _on_peer_connected(_id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
 	if not multiplayer.is_server():
 		return
+	var was_registered := players.has(id)
+	# Off the ready-list first: releasing their items below plays a drop
+	# effect for everyone on it, and they're no longer there to receive it.
+	players.erase(id)
 	# Drop anything they were carrying before their player node goes away,
 	# otherwise those items stay frozen mid-air with a held_by_peer that
 	# points at a peer who no longer exists — unpickable forever.
 	for item in get_tree().get_nodes_in_group("item"):
 		if item.held_by_peer == id:
 			item.host_force_release()
-	if not players.has(id):
+	if not was_registered:
 		return
-	players.erase(id)
 	_register_players_on_all.rpc(players)
 	_despawn_player_on_all.rpc(id)
 	if world:

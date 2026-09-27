@@ -16,6 +16,7 @@ extends Node
 signal state_changed
 signal round_finished
 signal round_reset
+signal category_completed(category_id: String)
 
 const RESYNC_INTERVAL := 5.0
 
@@ -29,6 +30,10 @@ var running: bool = false           # timer ticking (starts on the round's first
 var finished: bool = false
 
 var _resync_timer := 0.0
+# Per-type progress as of the previous _sync, deep-copied: on the host the
+# live dict is mutated before it's broadcast (and call_local passes it by
+# reference), so it can't serve as its own "before".
+var _prev_per_category: Dictionary = {}
 
 
 func _ready() -> void:
@@ -144,6 +149,7 @@ func _request_state() -> void:
 @rpc("authority", "reliable", "call_local")
 func _sync(snap: Dictionary) -> void:
 	var was_finished := finished
+	var old_per_category := _prev_per_category
 	total = snap["total"]
 	sorted = snap["sorted"]
 	mistakes = snap["mistakes"]
@@ -153,6 +159,15 @@ func _sync(snap: Dictionary) -> void:
 	running = snap["running"]
 	finished = snap["finished"]
 	state_changed.emit()
+	# A type just got its last item (only live transitions: a first
+	# snapshot or a reset has no "before" to compare against).
+	for cat_id in per_category:
+		var now_c: Dictionary = per_category[cat_id]
+		if old_per_category.has(cat_id) and now_c["total"] > 0 \
+				and now_c["sorted"] >= now_c["total"] \
+				and old_per_category[cat_id]["sorted"] < now_c["total"]:
+			category_completed.emit(cat_id)
+	_prev_per_category = per_category.duplicate(true)
 	if finished and not was_finished:
 		round_finished.emit()
 

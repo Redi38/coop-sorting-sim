@@ -97,6 +97,11 @@ talking. Co-op features are optional conveniences:
 "where does this go?" / "over here", tossing items to friends, a crew list
 and join/leave notices. None of it is required to finish a round.
 
+**Step 6 (feel & audio) — done.** Soft synthesized sounds and a quiet
+music-box loop; correct placements flash, pop and sparkle, wrong ones
+wobble; the room starts dim and dusty and warms, clears and regains its
+colour as the archive is restored, with each finished shelf lighting up.
+
 ## Out of scope (for now)
 
 Fail states, timers that end the round, competitive modes, asymmetric

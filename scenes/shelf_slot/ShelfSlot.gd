@@ -66,10 +66,11 @@ func request_place(item_path: NodePath) -> void:
 
 	var is_correct := item.category == accepted_category
 	item.host_attach_to_slot(attach_point.global_transform, self)
-	filled = true
-	if is_correct:
-		locked = true  # lock-on-complete: correct placements can't be undone
-	_sync_state.rpc(filled, locked, is_correct)
+	# Don't set filled/locked here: _sync_state (call_local) applies them on
+	# every peer *including this one*, and needs to see the old state to
+	# know this is a new placement (that's what plays the effects).
+	# locked = correct: lock-on-complete, correct placements can't be undone.
+	_sync_state.rpc(true, is_correct, is_correct, item.get_path())
 	var game_state := get_tree().get_first_node_in_group("game_state")
 	if game_state:
 		game_state.host_record_placement(requesting_peer, item.category, is_correct)
@@ -88,8 +89,36 @@ func host_free_slot() -> void:
 
 
 @rpc("authority", "reliable", "call_local")
-func _sync_state(is_filled: bool, is_locked: bool, was_correct: bool) -> void:
+func _sync_state(is_filled: bool, is_locked: bool, was_correct: bool, item_path := NodePath("")) -> void:
+	# Effects only for live changes: apply_state (late-join snapshot, round
+	# reset) stays silent.
+	var newly_locked := is_locked and not locked
+	var newly_wrong := is_filled and not was_correct and not filled
 	apply_state(is_filled, is_locked, was_correct)
+	var item := get_node_or_null(item_path) if item_path != NodePath("") else null
+	if newly_locked:
+		_flash(3.2)
+		Sfx.play("place_correct", attach_point.global_position)
+		var world := NetworkManager.world
+		if world and world.has_method("spawn_sparkles"):
+			world.spawn_sparkles(attach_point.global_position + Vector3(0, 0.12, 0), 14)
+		if item and item.has_method("pop"):
+			item.pop(1.3)
+	elif newly_wrong:
+		_flash(2.2)
+		Sfx.play("place_wrong", attach_point.global_position)
+		if item and item.has_method("wobble"):
+			item.wobble()
+
+
+## Brief bright glow on the felt pad that eases back to its resting level.
+func _flash(energy: float) -> void:
+	if _indicator_material == null:
+		return
+	var rest := _indicator_material.emission_energy_multiplier
+	_indicator_material.emission_energy_multiplier = energy
+	var tw := create_tween()
+	tw.tween_property(_indicator_material, "emission_energy_multiplier", rest, 0.8).set_ease(Tween.EASE_OUT)
 
 
 ## Applies slot state locally without an RPC. Used by _sync_state and by

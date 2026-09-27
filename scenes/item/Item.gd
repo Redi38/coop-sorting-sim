@@ -17,6 +17,10 @@ var look_seed: int = 0    # tint + size, derived identically on every peer
 @export var correct_slot_id: String = ""
 
 var held_by_peer: int = 0                   # 0 = not held
+var _look_scale := 1.0                      # per-item size from look_seed
+var _fx_scale := 1.0                        # short "pop" animations (see Juice)
+var _holder: Node3D = null                  # this peer's copy of the holder
+var _holder_id := 0
 var placed: bool = false
 var current_slot: Node = null               # the ShelfSlot this item is sitting in, if placed
 var _held_player_node: CoopPlayer = null
@@ -78,6 +82,7 @@ func _refresh_clue_display() -> void:
 		var s: float = look["scale"]
 		var model: Node3D = load(v.model_path).instantiate()
 		visual.add_child(model)
+		_look_scale = s
 		visual.scale = Vector3.ONE * s
 		for node in model.find_children("Tint*", "MeshInstance3D"):
 			var mi := node as MeshInstance3D
@@ -124,6 +129,42 @@ func _set(property: StringName, value) -> bool:
 	if property in ["category", "display_name", "description"] and is_inside_tree():
 		call_deferred("_refresh_clue_display")
 	return false
+
+
+## Where a held item is *drawn*. Every peer attaches the model to its own
+## copy of the holder's hand, every rendered frame, using the same
+## interpolated transform the camera/player are drawn with. The synced body
+## position (host-driven) is a network round trip behind the holder — on
+## the holder's own screen it fell behind and snapped forward as updates
+## arrived, i.e. the item "moved forward and backward" while walking.
+## The body itself still follows the host (physics, sync); only the visual
+## is local, and only while held.
+func _process(_delta: float) -> void:
+	if held_by_peer != 0:
+		if _holder_id != held_by_peer or not is_instance_valid(_holder):
+			_holder = _find_player(held_by_peer)
+			_holder_id = held_by_peer
+		if _holder:
+			if not visual.top_level:
+				# Detach the model from the body while held: the body is
+				# moved by network updates, possibly *after* this runs, and
+				# would drag a child model with it.
+				visual.top_level = true
+				visual.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+			var hand: Transform3D = _holder.get_hold_point().get_global_transform_interpolated()
+			visual.global_transform = Transform3D(
+				hand.basis.orthonormalized().scaled(Vector3.ONE * _look_scale * _fx_scale), hand.origin)
+			return
+	_holder = null
+	_holder_id = 0
+	if visual.top_level:
+		# back to riding on the (interpolated) body
+		visual.top_level = false
+		visual.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_INHERIT
+		visual.transform = Transform3D(Basis.from_scale(Vector3.ONE * _look_scale * _fx_scale), Vector3.ZERO)
+		visual.reset_physics_interpolation()
+	elif _fx_scale != 1.0 or not is_equal_approx(visual.scale.x, _look_scale):
+		visual.scale = Vector3.ONE * _look_scale * _fx_scale
 
 
 func _physics_process(_delta: float) -> void:
@@ -178,6 +219,7 @@ func request_pickup() -> void:
 	collision.disabled = true
 	_held_player_node = _find_player(requesting_peer)
 	_notify_player.rpc_id(requesting_peer, true)
+	_fx_all("pickup")
 	var game_state := get_tree().get_first_node_in_group("game_state")
 	if game_state:
 		game_state.host_note_pickup()  # first pickup of the round starts the clock
@@ -192,6 +234,7 @@ func request_drop() -> void:
 		return
 	_notify_player.rpc_id(releasing_peer, false)
 	_host_release_to_world()
+	_fx_all("drop")
 
 
 const TOSS_SPEED := 6.5
@@ -212,6 +255,7 @@ func request_toss() -> void:
 		forward = -player.camera.global_transform.basis.z
 	_notify_player.rpc_id(tosser, false)
 	_host_release_to_world()
+	_fx_all("toss")
 	linear_velocity = forward * TOSS_SPEED + Vector3.UP * TOSS_LIFT
 	angular_velocity = Vector3(randf_range(-4, 4), randf_range(-4, 4), randf_range(-4, 4))
 
@@ -226,6 +270,7 @@ func host_force_release() -> void:
 	if held_by_peer == 0:
 		return
 	_host_release_to_world()
+	_fx_all("drop")
 
 
 func _host_release_to_world() -> void:
@@ -254,6 +299,46 @@ func host_attach_to_slot(slot_global_transform: Transform3D, slot: Node) -> void
 	# more from the hold point) — without this it would visibly slide
 	# into place on every peer instead of snapping.
 	reset_physics_interpolation()
+
+
+# ---------------------------------------------------------------------------
+# Juice — sounds and little animations, played locally on every peer
+# ---------------------------------------------------------------------------
+
+## Host: tell every peer whose World has loaded to play an effect.
+func _fx_all(kind: String) -> void:
+	var connected := multiplayer.get_peers()
+	for peer_id in NetworkManager.players:
+		if peer_id == multiplayer.get_unique_id():
+			_fx(kind)
+		elif connected.has(peer_id):
+			_fx.rpc_id(peer_id, kind)
+
+
+@rpc("authority", "reliable")
+func _fx(kind: String) -> void:
+	match kind:
+		"pickup":
+			Sfx.play("pickup", global_position)
+			pop(1.25)
+		"drop":
+			Sfx.play("release", global_position)
+		"toss":
+			Sfx.play("toss", global_position)
+
+
+## Quick springy scale pop (pickup, correct placement).
+func pop(amount := 1.3) -> void:
+	_fx_scale = amount
+	var tw := create_tween()
+	tw.tween_property(self, "_fx_scale", 1.0, 0.45).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
+
+## Little "no, not here" wobble (wrong placement).
+func wobble() -> void:
+	var tw := create_tween()
+	for angle in [0.28, -0.22, 0.14, -0.07, 0.0]:
+		tw.tween_property(visual, "rotation:z", angle, 0.07).set_trans(Tween.TRANS_SINE)
 
 
 func _count_held_by(peer_id: int) -> int:
