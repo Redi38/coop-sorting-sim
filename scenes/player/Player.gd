@@ -34,6 +34,9 @@ var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 
 func _ready() -> void:
+	# Spawn pose is a jump, not movement — flag it so physics interpolation
+	# (see project.godot) doesn't smear it into a slide from the origin.
+	reset_physics_interpolation()
 	# Only sync our transform to peers whose World (and therefore our node)
 	# exists — see NetworkManager.is_peer_ready.
 	$MultiplayerSynchronizer.add_visibility_filter(NetworkManager.is_peer_ready)
@@ -283,3 +286,7 @@ func teleport(pos: Vector3) -> void:
 		return
 	global_position = pos
 	velocity = Vector3.ZERO
+	# Genuine jump, not movement — with physics interpolation on (see
+	# project.godot), skipping this would visibly slide the player across
+	# the room to their reset point on every peer instead of snapping.
+	reset_physics_interpolation()

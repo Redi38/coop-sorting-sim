@@ -180,6 +180,10 @@ func _spawn_player_on_all(id: int, spawn_position: Vector3) -> void:
 	player.set_multiplayer_authority(id)
 	world.get_node("Players").add_child(player)
 	player.global_position = spawn_position
+	# _ready() already reset interpolation once, before this line moved the
+	# player from the origin to their actual spawn point — reset again now
+	# that they're at the right pose, or that move renders as a slide-in.
+	player.reset_physics_interpolation()
 
 
 @rpc("authority", "reliable", "call_local")

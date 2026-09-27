@@ -330,6 +330,10 @@ func _spawn_items() -> Array[Dictionary]:
 		# network traffic every frame.
 		item.global_position = _free_scatter_point(used_points)
 		used_points.append(item.global_position)
+		# Item._ready() already reset interpolation once, before this line
+		# moved it from the origin to its scatter point — reset again now
+		# that it's actually placed, or it renders as a slide-in on spawn.
+		item.reset_physics_interpolation()
 		# random facing so the floor looks like a real mess, not a grid
 		item.rotation.y = randf() * TAU
 	return templates

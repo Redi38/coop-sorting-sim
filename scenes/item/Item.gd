@@ -34,6 +34,26 @@ func _ready() -> void:
 	add_to_group("item")
 	_refresh_clue_display()
 	set_multiplayer_authority(1)  # host always owns item logic
+	# freeze_mode defaults to STATIC, which tells the physics-interpolation
+	# system this body doesn't move — so its interpolated (rendered) pose
+	# stops updating the moment freeze turns on, even though we keep
+	# reassigning global_position every frame underneath it. That's why a
+	# held item looked stuck on the host (interpolation frozen on the pose
+	# from the instant it was picked up) and jittery/jumpy on clients (the
+	# interpolator bouncing between a stale cached pose and each new
+	# network value instead of smoothly advancing). KINEMATIC tells it
+	# this body is still driven, just not by the physics simulation, so
+	# its interpolation history keeps updating every tick like any other
+	# moving body — on the host (moved by _physics_process below) and on
+	# clients (moved by the MultiplayerSynchronizer) alike.
+	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	# With physics interpolation on (see project.godot), any *jump* in
+	# transform needs to be flagged with reset_physics_interpolation(),
+	# or the engine smears it into a fake slide from wherever the node's
+	# last interpolation pose happened to be (often the world origin for
+	# a freshly spawned/replicated node). Spawn position is exactly that
+	# kind of jump.
+	reset_physics_interpolation()
 	if multiplayer.is_server():
 		# Don't send this item to a peer until its World has loaded —
 		# otherwise the spawn arrives before the Items node exists and is
@@ -230,6 +250,10 @@ func host_attach_to_slot(slot_global_transform: Transform3D, slot: Node) -> void
 	freeze = true
 	collision.disabled = false
 	global_transform = slot_global_transform
+	# Snapping into the slot is a genuine teleport (could be a meter or
+	# more from the hold point) — without this it would visibly slide
+	# into place on every peer instead of snapping.
+	reset_physics_interpolation()
 
 
 func _count_held_by(peer_id: int) -> int:
