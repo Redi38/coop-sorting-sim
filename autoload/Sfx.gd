@@ -36,6 +36,7 @@ func _ready() -> void:
 	loop.loop_end = int(round(loop.get_length() * loop.mix_rate))
 	music_player.stream = loop
 	music_player.volume_db = MUSIC_DB
+	music_player.bus = "Music"   # volume set in Settings
 	add_child(music_player)
 	music_player.play()
 
@@ -86,6 +87,7 @@ func play(sound: String, pos: Variant = null, volume_db := 0.0, pitch_jitter := 
 		p3.max_distance = 45.0
 		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 		p3.stream = SOUNDS[sound]
+		p3.bus = "SFX"
 		p3.volume_db = volume_db
 		p3.pitch_scale = 1.0 + randf_range(-pitch_jitter, pitch_jitter)
 		add_child(p3)
@@ -96,6 +98,7 @@ func play(sound: String, pos: Variant = null, volume_db := 0.0, pitch_jitter := 
 	else:
 		var p2 := AudioStreamPlayer.new()
 		p2.stream = SOUNDS[sound]
+		p2.bus = "SFX"
 		p2.volume_db = volume_db
 		p2.pitch_scale = 1.0 + randf_range(-pitch_jitter, pitch_jitter)
 		add_child(p2)

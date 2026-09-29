@@ -13,6 +13,7 @@ func _ready() -> void:
 	await get_tree().create_timer(0.3).timeout
 	NetworkManager.host_game()
 	await get_tree().create_timer(2.5).timeout
+	get_tree().root.get_node("World/GameState").host_force_start()
 	var w := get_tree().root.get_node("World")
 	var p: CharacterBody3D = w.get_node("Players/1")
 	var cam: Camera3D = p.get_node("Camera3D")

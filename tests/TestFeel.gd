@@ -27,6 +27,7 @@ func _ready() -> void:
 	var e0 := env.ambient_light_energy
 	var f0 := env.fog_density
 	var d0: float = w.get_node("Dust").amount_ratio
+	gs.host_force_start()
 	check("starts dim and dusty", is_equal_approx(e0, 0.34) and is_equal_approx(d0, 1.0), "(ambient %.2f fog %.3f dust %.2f)" % [e0, f0, d0])
 	var completed: Array = []
 	gs.category_completed.connect(func(c): completed.append(c))

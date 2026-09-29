@@ -102,6 +102,11 @@ music-box loop; correct placements flash, pop and sparkle, wrong ones
 wobble; the room starts dim and dusty and warms, clears and regains its
 colour as the archive is restored, with each finished shelf lighting up.
 
+**Step 7 (UI & onboarding) — done.** A ready-up lobby with a 3-2-1
+countdown (host can start without an away friend), an Esc menu, saved
+settings (sensitivity, volumes, fullscreen), and beginner tips that teach
+by doing and never repeat.
+
 ## Out of scope (for now)
 
 Fail states, timers that end the round, competitive modes, asymmetric

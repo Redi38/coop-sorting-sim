@@ -68,9 +68,10 @@ func _host() -> void:
 	me.global_position = it.global_position + Vector3(0, 0, 1.0)
 	await get_tree().physics_frame
 	me.get_node("Camera3D").look_at(me.global_position + Vector3(0, 1.8, -5))  # face -z, slightly up
+	gs().host_force_start()
 	it.request_pickup.rpc_id(1)
 	await wait(0.4)
-	check("round started by pickup", gs().running)
+	check("round started", gs().running)
 	var start: Vector3 = it.global_position
 	me._try_toss()
 	await wait(0.25)

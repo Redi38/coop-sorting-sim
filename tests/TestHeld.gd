@@ -66,6 +66,7 @@ func _ready() -> void:
 		await wait(2.0)
 		var me: Node3D = world().get_node("Players/1")
 		var it: Node3D = world().get_node("Items/potion_00")
+		world().get_node("GameState").host_force_start()
 		it.request_pickup.rpc_id(1)
 		await wait(0.3)
 		report("host, own item, walking", await walk_and_sample(me, it, 2.0, true))

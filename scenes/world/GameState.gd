@@ -17,6 +17,7 @@ signal state_changed
 signal round_finished
 signal round_reset
 signal category_completed(category_id: String)
+signal phase_changed(new_phase: String)
 
 const RESYNC_INTERVAL := 5.0
 
@@ -26,7 +27,14 @@ var mistakes: int = 0
 var per_category: Dictionary = {}   # category_id -> {"sorted": int, "total": int}
 var player_stats: Dictionary = {}   # peer_id -> {"name": String, "correct": int, "wrong": int}
 var elapsed: float = 0.0
-var running: bool = false           # timer ticking (starts on the round's first pickup)
+var running: bool = false           # timer ticking (phase == "playing")
+# Round phases. "lobby": the crew gathers, presses R when ready; items
+# can't be picked up yet and the archive still resizes for joiners.
+# "countdown": everyone's ready, 3-2-1. "playing": sorting. "finished".
+const COUNTDOWN_SECONDS := 3.0
+var phase: String = "lobby"
+var ready_peers: Array = []         # peer ids who pressed R this lobby
+var countdown_left: float = 0.0
 var finished: bool = false
 
 var _resync_timer := 0.0
@@ -48,6 +56,10 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if running:
 		elapsed += delta
+	if phase == "countdown":
+		countdown_left = maxf(countdown_left - delta, 0.0)
+		if multiplayer.is_server() and countdown_left <= 0.0:
+			_host_begin_playing()
 	if multiplayer.is_server() and running:
 		_resync_timer += delta
 		if _resync_timer >= RESYNC_INTERVAL:
@@ -60,7 +72,9 @@ func _process(delta: float) -> void:
 # ---------------------------------------------------------------------------
 
 ## Starts a fresh round for the given item set (World._spawn_items output).
-func host_setup(item_templates: Array) -> void:
+## keep_ready: a resize for a new crew member keeps everyone's ready flags;
+## "Play again" starts a fresh lobby.
+func host_setup(item_templates: Array, keep_ready := false) -> void:
 	if not multiplayer.is_server():
 		return
 	total = item_templates.size()
@@ -76,16 +90,107 @@ func host_setup(item_templates: Array) -> void:
 	elapsed = 0.0
 	running = false
 	finished = false
+	phase = "lobby"
+	countdown_left = 0.0
+	if not keep_ready:
+		ready_peers = []
+	_prune_ready()
 	_resync_timer = 0.0
 	_broadcast()
 
 
-## Called by Item.request_pickup on every successful pickup.
-func host_note_pickup() -> void:
+## True until the countdown has finished: nothing has been sorted yet, so
+## the archive can still be resized for the crew.
+func round_not_started() -> bool:
+	return phase == "lobby" or phase == "countdown"
+
+
+## Only while playing can items be picked up (Item.request_pickup asks).
+func host_pickups_allowed() -> bool:
+	return phase == "playing"
+
+
+# --- lobby / ready-up ---------------------------------------------------------
+
+## Any player: press R. Toggles your ready flag in the lobby. The host
+## pressing R *again* while others aren't ready starts the countdown anyway,
+## so one away-from-keyboard friend can't hold the round hostage.
+@rpc("any_peer", "reliable", "call_local")
+func request_toggle_ready() -> void:
 	if not multiplayer.is_server():
 		return
-	if running or finished:
+	var peer := multiplayer.get_remote_sender_id()
+	if phase == "countdown":
+		# anyone un-readying during the countdown stops it
+		ready_peers.erase(peer)
+		phase = "lobby"
+		countdown_left = 0.0
+		_broadcast()
 		return
+	if phase != "lobby":
+		return
+	if ready_peers.has(peer):
+		if peer == 1 and not _all_ready():
+			_host_start_countdown()  # host override
+			return
+		ready_peers.erase(peer)
+	else:
+		ready_peers.append(peer)
+	if _all_ready():
+		_host_start_countdown()
+	else:
+		_broadcast()
+
+
+## Host: start right away (tests, tools). With countdown=false, skips 3-2-1.
+func host_force_start(countdown := false) -> void:
+	if not multiplayer.is_server() or not round_not_started():
+		return
+	if countdown:
+		_host_start_countdown()
+	else:
+		_host_begin_playing()
+
+
+## Host: the crew changed (join/leave). Drop departed players' ready flags;
+## a newcomer isn't ready, so a running countdown goes back to the lobby.
+func host_crew_changed() -> void:
+	if not multiplayer.is_server() or not round_not_started():
+		return
+	_prune_ready()
+	if phase == "countdown" and not _all_ready():
+		phase = "lobby"
+		countdown_left = 0.0
+	elif phase == "lobby" and _all_ready():
+		_host_start_countdown()
+		return
+	_broadcast()
+
+
+func _all_ready() -> bool:
+	var crew: Array = NetworkManager.players.keys()
+	if crew.is_empty():
+		crew = [1]
+	for peer_id in crew:
+		if not ready_peers.has(peer_id):
+			return false
+	return true
+
+
+func _prune_ready() -> void:
+	var present: Array = NetworkManager.players.keys()
+	ready_peers = ready_peers.filter(func(p): return present.has(p) or (present.is_empty() and p == 1))
+
+
+func _host_start_countdown() -> void:
+	phase = "countdown"
+	countdown_left = COUNTDOWN_SECONDS
+	_broadcast()
+
+
+func _host_begin_playing() -> void:
+	phase = "playing"
+	countdown_left = 0.0
 	running = true
 	_broadcast()
 
@@ -106,6 +211,7 @@ func host_record_placement(peer_id: int, category: String, correct: bool) -> voi
 	if total > 0 and sorted >= total:
 		finished = true
 		running = false
+		phase = "finished"
 	_broadcast()
 
 
@@ -131,6 +237,9 @@ func _snapshot() -> Dictionary:
 		"player_stats": player_stats,
 		"elapsed": elapsed,
 		"running": running,
+		"phase": phase,
+		"ready_peers": ready_peers,
+		"countdown_left": countdown_left,
 		"finished": finished,
 	}
 
@@ -157,6 +266,12 @@ func _sync(snap: Dictionary) -> void:
 	player_stats = snap["player_stats"]
 	elapsed = snap["elapsed"]
 	running = snap["running"]
+	var was_phase := phase
+	phase = snap.get("phase", "lobby")
+	ready_peers = snap.get("ready_peers", [])
+	countdown_left = snap.get("countdown_left", 0.0)
+	if phase != was_phase:
+		phase_changed.emit(phase)
 	finished = snap["finished"]
 	state_changed.emit()
 	# A type just got its last item (only live transitions: a first

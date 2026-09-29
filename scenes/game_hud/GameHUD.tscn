@@ -124,7 +124,7 @@ mouse_filter = 2
 modulate = Color(1, 1, 1, 0.6)
 theme_override_constants/outline_size = 5
 theme_override_font_sizes/font_size = 14
-text = "E  pick up / place     Q  drop     Right-click  toss     G  ping     M  music     Esc  mouse"
+text = "R  ready     E  pick up / place     Q  drop     Right-click  toss     G  ping     M  music     Esc  menu"
 
 [node name="WinPanel" type="PanelContainer" parent="."]
 unique_name_in_owner = true

@@ -27,6 +27,11 @@ tests/TestAim.gd              # Headless test: aim + interact for every type/sha
 tests/TestCoop.gd             # Headless 2-player test: scaling, pings, toss, crew list (see file header)
 tests/TestHeld.gd             # Headless 2-player test: held-item jitter measurement
 tests/TestFeel.gd             # Headless test: sounds, effects, room restoring with progress
+tests/TestUI.gd               # Headless test: settings, pause menu, tips, lobby (solo)
+tests/TestLobby.gd            # Headless 2-player test: ready-up, countdown, host override
+tests/TestLobbyJoin.gd        # Headless test: joins/leaves around the countdown
+autoload/Settings.gd          # Player settings + audio buses (autoload "Settings")
+scenes/ui/                    # SettingsPanel, PauseMenu, TutorialHints
 tools/gen_audio.py            # Procedural sound + music generator
 autoload/Sfx.gd               # Sounds + music (autoload "Sfx")
 scenes/main_menu/            # Host/Join screen
@@ -44,8 +49,8 @@ scenes/shelf_slot/            # Trigger volume that validates category + locks o
 2. **Input Map** is already defined in `project.godot`: WASD to move,
    Space to jump, E to interact (pick up / place), Q to drop the last
    item you picked up, right-click or T to toss it, G or middle-click to
-   ping, M to toggle music, Esc to toggle mouse capture. A hint bar in the
-   HUD lists these.
+   ping, R to ready up in the lobby, M to toggle music, Esc for the menu.
+   A hint bar in the HUD lists these.
 3. Open each `.tscn` once in the editor and let Godot re-save it — these
    were hand-written as text, so node references (`@onready` paths, unique
    names like `%HostButton`) should resolve, but double-check the Inspector
@@ -179,6 +184,32 @@ nicer to play together.
   Tuning lives in `World.gd` (`DUSTY` / `RESTORED`).
 - **Clean exit:** closing the window stops all sounds before quitting, so
   the engine doesn't report leaked audio playbacks.
+
+## UI & onboarding (step 7)
+
+- **Lobby / ready-up:** a round begins in the lobby. Everyone walks
+  around (no pickups yet) and presses **R** when ready; when the whole
+  crew is ready, a 3-2-1 countdown starts the round. Un-readying during
+  the countdown cancels it. The host can press R again to start without
+  waiting for someone who's away. Joining during the lobby or countdown
+  still grows the archive (and cancels a countdown, since the newcomer
+  isn't ready); once playing, the size is locked. Phases live in
+  `GameState.phase`: lobby → countdown → playing → finished.
+- **Pause menu (Esc):** Resume, Settings, Leave game, Quit. The game
+  doesn't pause (multiplayer); your own input stops while it's open
+  (`Settings.menu_open`).
+- **Settings** (`autoload/Settings.gd`, saved to `user://settings.cfg`,
+  also on the main menu): mouse sensitivity, master / music / effects
+  volume (audio buses "Music" and "SFX"), fullscreen, and "Show the
+  beginner tips again".
+- **Beginner tips** (`scenes/ui/TutorialHints.gd`): one small tip at a
+  time during your first rounds: look at an item, pick it up, find the
+  matching shelf, and (with a crew) ping and toss. A first mistake shows
+  how to take the item back out. Each tip goes away once you've done the
+  thing, and is remembered per player.
+- **Fix:** aiming at a filled slot now targets the item in it, so a
+  misplaced item can actually be taken back off the shelf (the slot's
+  target box used to hide it).
 
 ## Testing the milestone locally
 

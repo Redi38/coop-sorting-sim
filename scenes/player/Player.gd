@@ -8,7 +8,7 @@ extends CharacterBody3D
 
 const SPEED := 4.5
 const JUMP_VELOCITY := 4.0
-const MOUSE_SENSITIVITY := 0.0025
+# Mouse sensitivity lives in Settings (saved per player).
 const INTERACT_RANGE := 2.5
 const CARRY_CAPACITY := 3
 # Robe/hat colours, picked per player so friends can tell each other apart.
@@ -58,13 +58,20 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Menus (pause / settings) own the input while open; Esc is handled by
+	# the pause menu (scenes/ui/PauseMenu.gd).
+	if Settings.menu_open:
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		rotate_y(-event.relative.x * MOUSE_SENSITIVITY)
-		camera.rotate_x(-event.relative.y * MOUSE_SENSITIVITY)
+		var sens: float = Settings.mouse_sensitivity
+		rotate_y(-event.relative.x * sens)
+		camera.rotate_x(-event.relative.y * sens)
 		camera.rotation.x = clamp(camera.rotation.x, deg_to_rad(-80), deg_to_rad(80))
 
-	if event.is_action_pressed("ui_cancel"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
+	if event.is_action_pressed("ready"):
+		var gs := get_tree().get_first_node_in_group("game_state")
+		if gs:
+			gs.request_toggle_ready.rpc_id(1)
 
 	if event.is_action_pressed("interact"):
 		_try_interact()
@@ -82,10 +89,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
-	if Input.is_action_just_pressed("jump") and is_on_floor():
+	var in_menu: bool = Settings.menu_open
+	if not in_menu and Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = JUMP_VELOCITY
 
-	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var input_dir := Vector2.ZERO if in_menu else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 	if direction:
 		velocity.x = direction.x * SPEED
@@ -102,7 +110,10 @@ func _physics_process(delta: float) -> void:
 func _update_hover() -> void:
 	var target: Node = null
 	if interact_ray.is_colliding():
-		target = _item_from_collider(interact_ray.get_collider())
+		var c := interact_ray.get_collider()
+		target = _item_from_collider(c)
+		if target == null and c and c.is_in_group("shelf_slot"):
+			target = occupant_of(c)   # read what's sitting on the shelf
 	if target == _hovered_item:
 		return
 	if is_instance_valid(_hovered_item):
@@ -110,6 +121,19 @@ func _update_hover() -> void:
 	_hovered_item = target
 	if _hovered_item:
 		_hovered_item.set_label_visible(true)
+
+
+## The item sitting in `slot`, if any. Found by position (items attach
+## exactly at the slot's AttachPoint), so it works on every peer, including
+## late joiners, without extra syncing.
+func occupant_of(slot: Node) -> Node:
+	if not slot.filled:
+		return null
+	var at: Vector3 = slot.get_node("AttachPoint").global_position
+	for it in get_tree().get_nodes_in_group("item"):
+		if it.placed and it.global_position.distance_squared_to(at) < 0.01:
+			return it
+	return null
 
 
 ## The crosshair usually hits an item's padded aim box (an Area3D child of
@@ -157,7 +181,14 @@ func _try_interact() -> void:
 	if item:
 		_try_pickup(item)
 	elif target.is_in_group("shelf_slot"):
-		_try_place(target)
+		# A slot's target box surrounds whatever sits in it, so aiming at a
+		# filled slot means its item: that's how a misplaced item gets taken
+		# back out. An empty slot is where your held item goes.
+		var occupant := occupant_of(target)
+		if occupant:
+			_try_pickup(occupant)
+		else:
+			_try_place(target)
 
 
 func _try_pickup(item: Node) -> void:
@@ -177,10 +208,13 @@ func _try_place(slot: Node) -> void:
 	slot.request_place.rpc_id(1, item.get_path())
 
 
+var tossed_count := 0   # for the onboarding tip
+
 func _try_toss() -> void:
 	_prune_freed_items()
 	if held_items.is_empty():
 		return
+	tossed_count += 1
 	held_items[-1].request_toss.rpc_id(1)
 
 

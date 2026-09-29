@@ -197,6 +197,9 @@ func request_pickup() -> void:
 	var requesting_peer := multiplayer.get_remote_sender_id()
 	if held_by_peer != 0:
 		return  # someone's already holding it
+	var gs := get_tree().get_first_node_in_group("game_state")
+	if gs and not gs.host_pickups_allowed():
+		return  # lobby / countdown / finished: nothing to pick up yet
 	# Host-side carry limit. The client checks this too, but only against
 	# pickups the host has already confirmed — spamming E before the
 	# replies land would otherwise let a player exceed CARRY_CAPACITY.
@@ -220,9 +223,6 @@ func request_pickup() -> void:
 	_held_player_node = _find_player(requesting_peer)
 	_notify_player.rpc_id(requesting_peer, true)
 	_fx_all("pickup")
-	var game_state := get_tree().get_first_node_in_group("game_state")
-	if game_state:
-		game_state.host_note_pickup()  # first pickup of the round starts the clock
 
 
 @rpc("any_peer", "reliable", "call_local")

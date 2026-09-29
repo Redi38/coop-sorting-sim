@@ -383,8 +383,7 @@ static func item_count_for(player_count: int) -> int:
 ## True until the round's first pickup (or placement) — while it's true the
 ## archive can still be resized for the crew without anyone losing work.
 func round_not_started() -> bool:
-	return not game_state.running and not game_state.finished \
-		and game_state.sorted == 0 and game_state.mistakes == 0
+	return game_state.round_not_started()
 
 
 ## Host: called by NetworkManager whenever someone finishes joining or
@@ -393,11 +392,15 @@ func round_not_started() -> bool:
 func host_on_crew_changed() -> void:
 	if not multiplayer.is_server() or not round_not_started():
 		return
+	# Resize first (it resets the round to the lobby), then re-check who's
+	# ready: a newcomer cancels a countdown; if the last not-ready player
+	# left, the countdown starts.
 	if item_count_for(maxi(1, NetworkManager.players.size())) != game_state.total:
-		host_restart_round(false)  # nobody has done anything yet: no teleport
+		host_restart_round(false, true)  # nobody has done anything yet: no teleport, keep ready flags
+	game_state.host_crew_changed()
 
 
-func host_restart_round(teleport_players := true) -> void:
+func host_restart_round(teleport_players := true, keep_ready := false) -> void:
 	if not multiplayer.is_server():
 		return
 	# Despawn every item. remove_child (not just queue_free) takes the node
@@ -410,7 +413,7 @@ func host_restart_round(teleport_players := true) -> void:
 	# Clear carried-item lists and the win screen everywhere *before* the
 	# new round's state lands, so nobody's HUD briefly says "Carrying 3/3".
 	game_state.notify_round_reset.rpc()
-	game_state.host_setup(_spawn_items())
+	game_state.host_setup(_spawn_items(), keep_ready)
 	if not teleport_players:
 		return
 	# Players own their own transform, so ask each one to move itself.
